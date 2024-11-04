@@ -175,14 +175,26 @@ public abstract class RaftNode<T>
     return commitTerm <= NewLogTerm && commitIndex <= NewLogIndex;
   }
 
-  protected void OnBroadcastElapsed(object? Ignored)
+  protected async void OnBroadcastElapsed(object? Ignored)
   {
     // Heartbeat
+    List<Task> requestList = new List<Task>();
     foreach (int nodeId in NodeIds)
     {
-      // TODO check return value for degrading to follower i guess
-      SendAppendEntries(nodeId, currentTerm, Id, commitIndex, commitTerm, null, commitIndex);
+      // TODO add cancelettion token for downgrading to follower case
+      var requestTask = new Task<(int, bool)>(() => SendAppendEntries(nodeId, currentTerm, Id, commitIndex, commitTerm, null, commitIndex));
+      var replyTask = requestTask.ContinueWith((task) => HandleHeartbeatReply(task.Result.Item1, task.Result.Item2));
+      requestList.Add(requestTask);
+      requestList.Add(replyTask);
     }
+
+    await Task.WhenAll(requestList);
+  }
+
+  protected void HandleHeartbeatReply(int Term, bool Success)
+  {
+    CorrectTerm(Term);
+
   }
 
   protected async void BeginElection()
@@ -209,11 +221,13 @@ public abstract class RaftNode<T>
       BecomeLeader();
     }
   }
+
   protected void HandleRequestVoteReply(int Term, bool VoteGranted)
   {
     CorrectTerm(Term);
     if (nodeState == State.Candidate && VoteGranted) votesGot++;
   }
+
   protected void OnElectionElapsed(object? Ignored)
   {
     if (nodeState != State.Leader) return;
