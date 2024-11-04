@@ -1,6 +1,4 @@
-using System;
-using System.Diagnostics.Contracts;
-using System.Net.Sockets;
+using System.Threading;
 
 namespace RafRaft.Domain;
 
@@ -14,10 +12,19 @@ public abstract class RaftNode<T>
   }
 
   public readonly int Id;
-  protected State state = State.Follower;
+
+  private State _nodeState = State.Follower;
+  protected State NodeState
+  {
+    get => _nodeState;
+    set
+    {
+      _nodeState = value;
+    }
+  }
   protected int currentTerm = 0;
   protected int? votedFor;
-  protected abstract IEnumerable<Action<T>> Log
+  protected abstract IEnumerable<RaftLogEntry<T>> Log
   {
     get;
   }
@@ -31,24 +38,127 @@ public abstract class RaftNode<T>
   {
     get;
   }
-  protected readonly long broadcastTime;
-  protected readonly long electionTimeout;
-  protected readonly int[] peersIds;
-  protected int ClusterSize => peersIds.Length + 1;
-
-  public RaftNode(long BroadcastTime, long ElectionTimeout, IEnumerable<int> PeersIds)
+  protected abstract T InternalState
   {
-    broadcastTime = BroadcastTime;
+    get;
+  }
+  protected readonly long broadcastTimeout;
+  protected readonly Timer broadcastTimer;
+  protected readonly long electionTimeout;
+  protected readonly Timer electionTimer;
+  protected abstract IList<int> PeersIds
+  {
+    get;
+  }
+  protected int ClusterSize => PeersIds.Count + 1;
+  protected int leaderId;
+  protected int votesGot = 0;
+
+  public RaftNode(long BroadcastTime, long ElectionTimeout)
+  {
+    broadcastTimeout = BroadcastTime;
     electionTimeout = ElectionTimeout;
-    peersIds = PeersIds.ToArray();
+
+    broadcastTimer = new Timer(OnBroadcastElapsed, null, Timeout.Infinite, broadcastTimeout);
+    electionTimer = new Timer(OnElectionElapsed, null, Timeout.Infinite, electionTimeout);
   }
 
-  public abstract (int, bool) SendAppendEntries(int Term, int LeaderId, int PrevLogIndex,
-    int prevLogTerm, IEnumerable<Action<T>>? Entries, int LeaderCommit);
-  public abstract (int, bool) SendRequestVote(int Term, int CandidateId,
+  public abstract (int, bool) SendAppendEntries(int RecieverId, int Term, int LeaderId, int PrevLogIndex,
+    int PrevLogTerm, IEnumerable<RaftLogEntry<T>>? Entries, int LeaderCommit);
+
+  public abstract (int, bool) SendRequestVote(int RecieverId, int Term, int CandidateId,
     int LastLogIndex, int LastLogTerm);
-  public abstract void HandleAppendEntries(int Term, int LeaderId, int PrevLogIndex,
-    int prevLogTerm, IEnumerable<Action<T>>? Entries, int LeaderCommit);
-  public abstract void HandleRequestVote(int Term, int CandidateId,
-    int LastLogIndex, int LastLogTerm);
+
+  public abstract void ReplyToAppendEntries(int Term, bool Success);
+
+  public abstract void ReplyToRequestVote(int Term, bool VoteGranted);
+
+  public abstract bool CompareEntries(RaftLogEntry<T> entryA, RaftLogEntry<T> entryB);
+
+  /// <summary>
+  /// 
+  /// </summary>
+  /// <param name="Entries"></param>
+  /// <returns>Index of last new entry</returns>
+  protected abstract int AppendEntries(IEnumerable<RaftLogEntry<T>>? Entries);
+
+  public void StartUp()
+  {
+    broadcastTimer.Change(0, broadcastTimeout);
+    electionTimer.Change(0, broadcastTimeout);
+  }
+
+  public void HandleAppendEntries(int Term, int LeaderId, int PrevLogIndex,
+    int PrevLogTerm, IEnumerable<RaftLogEntry<T>>? Entries, int LeaderCommit)
+  {
+    if (Term < currentTerm)
+    {
+      ReplyToAppendEntries(currentTerm, false);
+    }
+    CorrectTerm(Term);
+    CorrectLeader(LeaderId);
+
+    RaftLogEntry<T>? prevEntry = Log.ElementAt(PrevLogIndex);
+    if (prevEntry is null || prevEntry.Term != PrevLogTerm)
+    {
+      ReplyToAppendEntries(currentTerm, false);
+    }
+
+    int lastNewEntryId = AppendEntries(Entries);
+
+    if (LeaderCommit > commitIndex)
+    {
+      commitIndex = Math.Min(LeaderCommit, lastNewEntryId);
+    }
+
+    ApplyCommited();
+    ReplyToAppendEntries(currentTerm, true);
+  }
+
+  protected async void ApplyCommited()
+  {
+    for (; lastApplied < commitIndex; lastApplied++)
+    {
+      await Task.Run(() => Log.ElementAt(lastApplied + 1).action.Invoke(InternalState));
+    }
+  }
+
+  protected void CorrectTerm(int Term)
+  {
+    if (Term > currentTerm)
+    {
+      currentTerm = Term;
+      NodeState = State.Follower;
+    }
+  }
+
+  protected void CorrectLeader(int LeaderId)
+  {
+    leaderId = LeaderId;
+  }
+
+  public void HandleRequestVote(int Term, int CandidateId,
+    int LastLogIndex, int LastLogTerm)
+  {
+    if (Term < currentTerm)
+    {
+      ReplyToRequestVote(currentTerm, false);
+    }
+    CorrectTerm(Term);
+
+    if (votedFor is null || votedFor == CandidateId)
+    {
+      votedFor = CandidateId;
+      ReplyToRequestVote(currentTerm, true);
+    }
+  }
+
+  protected void OnBroadcastElapsed(object? Ignored)
+  {
+
+  }
+  protected void OnElectionElapsed(object? Ignored)
+  {
+
+  }
 }
