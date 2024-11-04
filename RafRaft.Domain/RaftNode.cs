@@ -13,15 +13,7 @@ public abstract class RaftNode<T>
 
   public readonly int Id;
 
-  private State _nodeState = State.Follower;
-  protected State NodeState
-  {
-    get => _nodeState;
-    set
-    {
-      _nodeState = value;
-    }
-  }
+  protected State nodeState = State.Follower;
   protected int currentTerm = 0;
   protected int? votedFor;
   protected abstract IEnumerable<RaftLogEntry<T>> Log
@@ -53,6 +45,16 @@ public abstract class RaftNode<T>
   protected int ClusterSize => PeersIds.Count + 1;
   protected int leaderId;
   protected int votesGot = 0;
+  private int _heartbeatRecievedBackValue = 0;
+  protected bool HeartbeatRecieved
+  {
+    get { return Interlocked.CompareExchange(ref _heartbeatRecievedBackValue, 1, 1) == 1; }
+    set
+    {
+      if (value) Interlocked.CompareExchange(ref _heartbeatRecievedBackValue, 1, 0);
+      else Interlocked.CompareExchange(ref _heartbeatRecievedBackValue, 0, 1);
+    }
+  }
 
   public RaftNode(long BroadcastTime, long ElectionTimeout)
   {
@@ -84,25 +86,31 @@ public abstract class RaftNode<T>
 
   public void StartUp()
   {
-    broadcastTimer.Change(0, broadcastTimeout);
     electionTimer.Change(0, broadcastTimeout);
   }
 
   public void HandleAppendEntries(int Term, int LeaderId, int PrevLogIndex,
     int PrevLogTerm, IEnumerable<RaftLogEntry<T>>? Entries, int LeaderCommit)
   {
+    HeartbeatRecieved = true;
+
+    #region Term correction
     if (Term < currentTerm)
     {
       ReplyToAppendEntries(currentTerm, false);
     }
     CorrectTerm(Term);
+    #endregion
+
     CorrectLeader(LeaderId);
 
+    #region Previous log entry discovery
     RaftLogEntry<T>? prevEntry = Log.ElementAt(PrevLogIndex);
     if (prevEntry is null || prevEntry.Term != PrevLogTerm)
     {
       ReplyToAppendEntries(currentTerm, false);
     }
+    #endregion
 
     int lastNewEntryId = AppendEntries(Entries);
 
@@ -112,6 +120,7 @@ public abstract class RaftNode<T>
     }
 
     ApplyCommited();
+
     ReplyToAppendEntries(currentTerm, true);
   }
 
@@ -128,7 +137,7 @@ public abstract class RaftNode<T>
     if (Term > currentTerm)
     {
       currentTerm = Term;
-      NodeState = State.Follower;
+      BecomeFollower();
     }
   }
 
@@ -155,10 +164,58 @@ public abstract class RaftNode<T>
 
   protected void OnBroadcastElapsed(object? Ignored)
   {
+    //TODO
+  }
 
+  protected void BeginElection()
+  {
+    //TODO
+
+    if (VotesAreEnough())
+    {
+      BecomeLeader();
+    }
   }
   protected void OnElectionElapsed(object? Ignored)
   {
+    if (nodeState != State.Leader) return;
 
+    if (!HeartbeatRecieved)
+    {
+      BecomeCandidate();
+      return;
+    }
+
+    HeartbeatRecieved = false;
+  }
+
+  protected void BecomeLeader()
+  {
+    broadcastTimer.Change(0, broadcastTimeout);
+    //TODO: init next index
+    //TODO: init match index
+  }
+
+  protected void BecomeCandidate()
+  {
+    DemoteFromLeadership();
+    nodeState = State.Leader;
+    BeginElection();
+  }
+
+  protected void BecomeFollower()
+  {
+    DemoteFromLeadership();
+    nodeState = State.Follower;
+  }
+
+  protected void DemoteFromLeadership()
+  {
+    broadcastTimer.Change(Timeout.Infinite, broadcastTimeout); // or both Infinte?
+  }
+
+  protected bool VotesAreEnough()
+  {
+    return votesGot * 2 > ClusterSize;
   }
 }
