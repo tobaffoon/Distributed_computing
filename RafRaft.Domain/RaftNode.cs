@@ -2,7 +2,7 @@ using System.Threading;
 
 namespace RafRaft.Domain;
 
-public abstract class RaftNode<T>
+public abstract class RaftNode<T> where T : new()
 {
   public enum State
   {
@@ -31,10 +31,7 @@ public abstract class RaftNode<T>
   {
     get;
   }
-  protected abstract T InternalState
-  {
-    get;
-  }
+  protected readonly T internalState;
   protected readonly long broadcastTimeout;
   protected readonly Timer broadcastTimer;
   protected readonly long electionTimeout;
@@ -64,6 +61,8 @@ public abstract class RaftNode<T>
 
     broadcastTimer = new Timer(OnBroadcastElapsed, null, Timeout.Infinite, broadcastTimeout);
     electionTimer = new Timer(OnElectionElapsed, null, Timeout.Infinite, electionTimeout);
+
+    internalState = new T();
   }
 
   public abstract (int, bool) SendAppendEntries(int RecieverId, int Term, int LeaderId, int PrevLogIndex,
@@ -129,7 +128,7 @@ public abstract class RaftNode<T>
   {
     for (; lastApplied < commitIndex; lastApplied++)
     {
-      await Task.Run(() => Log.ElementAt(lastApplied + 1).action.Invoke(InternalState));
+      await Task.Run(() => Log.ElementAt(lastApplied + 1).action.Invoke(internalState));
     }
   }
 

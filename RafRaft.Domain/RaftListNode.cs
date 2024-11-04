@@ -2,7 +2,7 @@ using System;
 
 namespace RafRaft.Domain;
 
-public abstract class RaftListNode<T> : RaftNode<T>
+public abstract class RaftListNode<T> : RaftNode<T> where T : new()
 {
   protected RaftListNode(long BroadcastTime, long ElectionTimeout) : base(BroadcastTime, ElectionTimeout)
   {

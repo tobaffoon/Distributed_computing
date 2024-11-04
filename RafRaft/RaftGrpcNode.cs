@@ -3,7 +3,7 @@ using RafRaft.Domain;
 
 namespace RafRaft;
 
-public class RaftGrpcNode<T> : RaftNode<T>
+public class RaftGrpcNode<T> : RaftNode<T> where T : new()
 {
   public RaftGrpcNode(long BroadcastTime, long ElectionTimeout) : base(BroadcastTime, ElectionTimeout)
   {
@@ -14,8 +14,6 @@ public class RaftGrpcNode<T> : RaftNode<T>
   protected override IEnumerable<int> NextIndex => throw new NotImplementedException();
 
   protected override IEnumerable<int> MatchIndex => throw new NotImplementedException();
-
-  protected override T InternalState => throw new NotImplementedException();
 
   protected override IList<int> NodeIds => throw new NotImplementedException();
 
