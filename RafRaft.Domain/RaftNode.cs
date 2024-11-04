@@ -156,11 +156,23 @@ public abstract class RaftNode<T>
     }
     CorrectTerm(Term);
 
-    if (votedFor is null || votedFor == CandidateId)
+    if (CanGrantVote(CandidateId) && IsNewLogBetter(LastLogIndex, LastLogTerm))
     {
       votedFor = CandidateId;
       ReplyToRequestVote(currentTerm, true);
     }
+    else
+    {
+      ReplyToRequestVote(currentTerm, false);
+    }
+  }
+  private bool CanGrantVote(int CandidateId)
+  {
+    return votedFor is null || votedFor == CandidateId;
+  }
+  private bool IsNewLogBetter(int NewLogIndex, int NewLogTerm)
+  {
+    return commitTerm <= NewLogTerm && commitIndex <= NewLogIndex;
   }
 
   protected void OnBroadcastElapsed(object? Ignored)
