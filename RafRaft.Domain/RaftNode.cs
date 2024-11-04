@@ -21,6 +21,7 @@ public abstract class RaftNode<T>
     get;
   }
   protected int commitIndex = 0;
+  protected int commitTerm = 0;
   protected int lastApplied = 0;
   protected abstract IEnumerable<int> NextIndex
   {
@@ -38,11 +39,11 @@ public abstract class RaftNode<T>
   protected readonly Timer broadcastTimer;
   protected readonly long electionTimeout;
   protected readonly Timer electionTimer;
-  protected abstract IList<int> PeersIds
+  protected abstract IList<int> NodeIds
   {
     get;
   }
-  protected int ClusterSize => PeersIds.Count + 1;
+  protected int ClusterSize => NodeIds.Count + 1;
   protected int leaderId;
   protected int votesGot = 0;
   private int _heartbeatRecievedBackValue = 0;
@@ -78,7 +79,7 @@ public abstract class RaftNode<T>
   public abstract bool CompareEntries(RaftLogEntry<T> entryA, RaftLogEntry<T> entryB);
 
   /// <summary>
-  /// 
+  /// Must set commitIndex and commitTerm.
   /// </summary>
   /// <param name="Entries"></param>
   /// <returns>Index of last new entry</returns>
@@ -164,7 +165,11 @@ public abstract class RaftNode<T>
 
   protected void OnBroadcastElapsed(object? Ignored)
   {
-    //TODO
+    // Heartbeat
+    foreach (int nodeId in NodeIds)
+    {
+      SendAppendEntries(nodeId, currentTerm, Id, commitIndex, commitTerm, null, commitIndex);
+    }
   }
 
   protected void BeginElection()
