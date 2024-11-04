@@ -178,23 +178,22 @@ public abstract class RaftNode<T>
   protected async void OnBroadcastElapsed(object? Ignored)
   {
     // Heartbeat
-    List<Task> requestList = new List<Task>();
+    List<Task> taskList = new List<Task>();
     foreach (int nodeId in NodeIds)
     {
       // TODO add cancelettion token for downgrading to follower case
       var requestTask = new Task<(int, bool)>(() => SendAppendEntries(nodeId, currentTerm, Id, commitIndex, commitTerm, null, commitIndex));
       var replyTask = requestTask.ContinueWith((task) => HandleHeartbeatReply(task.Result.Item1, task.Result.Item2));
-      requestList.Add(requestTask);
-      requestList.Add(replyTask);
+      taskList.Add(requestTask);
+      taskList.Add(replyTask);
     }
 
-    await Task.WhenAll(requestList);
+    await Task.WhenAll(taskList);
   }
 
   protected void HandleHeartbeatReply(int Term, bool Success)
   {
     CorrectTerm(Term);
-
   }
 
   protected async void BeginElection()
@@ -205,16 +204,16 @@ public abstract class RaftNode<T>
     votedFor = Id;
     votesGot++;
 
-    List<Task> voteList = new List<Task>();
+    List<Task> taskList = new List<Task>();
     foreach (int nodeId in NodeIds)
     {
-      // TODO add cancelettion token wor downgrading case
+      // TODO add cancelettion token for downgrading case
       var voteTask = new Task<(int, bool)>(() => SendRequestVote(nodeId, currentTerm, Id, commitIndex, commitTerm));
       var replyTask = voteTask.ContinueWith((task) => HandleRequestVoteReply(task.Result.Item1, task.Result.Item2));
-      voteList.Add(voteTask);
-      voteList.Add(replyTask);
+      taskList.Add(voteTask);
+      taskList.Add(replyTask);
     }
-    await Task.WhenAll(voteList);
+    await Task.WhenAll(taskList);
 
     if (VotesAreEnough())
     {
