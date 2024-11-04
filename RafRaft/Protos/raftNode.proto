@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-option csharp_namespace = "RafRaft.Protos";
+option csharp_namespace = "RaftRaft.Protos";
 
-package RafRaft;
+package RaftRaft;
 
-service RafNode{
+service RaftNode{
     rpc Heartbeat(AppendEntriesRequest) returns (AppendEntriesReply);
     rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesReply);
     rpc RequestVote(VoteRequest) returns (VoteReply);

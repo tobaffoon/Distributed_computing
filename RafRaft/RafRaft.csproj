@@ -7,15 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Protobuf Include="Protos\rafRaft.proto" GrpcServices="Both" CompileProtobuf="yes" />
+    <Protobuf Include="Protos\raftNode.proto" GrpcServices="Both" CompileProtobuf="yes" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Grpc.AspNetCore" Version="2.64.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Services/" />
   </ItemGroup>
 
   <ItemGroup>
