@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RafRaft.Domain", "RafRaft.Domain\RafRaft.Domain.csproj", "{80214917-2E58-4019-8560-41C01A3D41D1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RafRaft", "RafRaft\RafRaft.csproj", "{8C30B093-2396-4F6B-AC15-5373B4470279}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{80214917-2E58-4019-8560-41C01A3D41D1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{80214917-2E58-4019-8560-41C01A3D41D1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{80214917-2E58-4019-8560-41C01A3D41D1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8C30B093-2396-4F6B-AC15-5373B4470279}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8C30B093-2396-4F6B-AC15-5373B4470279}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8C30B093-2396-4F6B-AC15-5373B4470279}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8C30B093-2396-4F6B-AC15-5373B4470279}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
