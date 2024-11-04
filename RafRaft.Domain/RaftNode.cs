@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics.Contracts;
+using System.Net.Sockets;
 
 namespace RafRaft.Domain;
 
@@ -29,4 +31,24 @@ public abstract class RaftNode<T>
   {
     get;
   }
+  protected readonly long broadcastTime;
+  protected readonly long electionTimeout;
+  protected readonly int[] peersIds;
+  protected int ClusterSize => peersIds.Length + 1;
+
+  public RaftNode(long BroadcastTime, long ElectionTimeout, IEnumerable<int> PeersIds)
+  {
+    broadcastTime = BroadcastTime;
+    electionTimeout = ElectionTimeout;
+    peersIds = PeersIds.ToArray();
+  }
+
+  public abstract (int, bool) SendAppendEntries(int Term, int LeaderId, int PrevLogIndex,
+    int prevLogTerm, IEnumerable<Action<T>>? Entries, int LeaderCommit);
+  public abstract (int, bool) SendRequestVote(int Term, int CandidateId,
+    int LastLogIndex, int LastLogTerm);
+  public abstract void HandleAppendEntries(int Term, int LeaderId, int PrevLogIndex,
+    int prevLogTerm, IEnumerable<Action<T>>? Entries, int LeaderCommit);
+  public abstract void HandleRequestVote(int Term, int CandidateId,
+    int LastLogIndex, int LastLogTerm);
 }
