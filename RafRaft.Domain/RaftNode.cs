@@ -2,10 +2,9 @@ using System.Threading;
 
 namespace RafRaft.Domain;
 
-public abstract class RaftNode<Entry, T, D>
-  where Entry : RaftLogEntry<T, D>
+public abstract class RaftNode<Entry, T>
+  where Entry : RaftLogEntry<T>
   where T : new()
-  where D : struct
 {
   public enum State
   {
@@ -68,15 +67,15 @@ public abstract class RaftNode<Entry, T, D>
     log = new List<Entry>();
   }
 
-  public abstract (int, bool) SendAppendEntries(int RecieverId, int Term, int LeaderId, int PrevLogIndex,
+  public abstract Task<(int, bool)> SendAppendEntries(int RecieverId, int Term, int LeaderId, int PrevLogIndex,
     int PrevLogTerm, IEnumerable<Entry>? Entries, int LeaderCommit);
 
-  public abstract (int, bool) SendRequestVote(int RecieverId, int Term, int CandidateId,
+  public abstract Task<(int, bool)> SendRequestVote(int RecieverId, int Term, int CandidateId,
     int LastLogIndex, int LastLogTerm);
 
-  public abstract void ReplyToAppendEntries(int Term, bool Success);
+  public abstract Task ReplyToAppendEntries(int Term, bool Success);
 
-  public abstract void ReplyToRequestVote(int Term, bool VoteGranted);
+  public abstract Task ReplyToRequestVote(int Term, bool VoteGranted);
 
   protected int AppendEntries(IEnumerable<Entry>? Entries)
   {
@@ -189,7 +188,7 @@ public abstract class RaftNode<Entry, T, D>
     foreach (int nodeId in nodeIds)
     {
       // TODO add cancelettion token for downgrading to follower case
-      var requestTask = new Task<(int, bool)>(() => SendAppendEntries(nodeId, currentTerm, id, commitIndex, commitTerm, null, commitIndex));
+      var requestTask = SendAppendEntries(nodeId, currentTerm, id, commitIndex, commitTerm, null, commitIndex);
       var replyTask = requestTask.ContinueWith((task) => HandleHeartbeatReply(task.Result.Item1, task.Result.Item2));
       taskList.Add(requestTask);
       taskList.Add(replyTask);
@@ -215,7 +214,7 @@ public abstract class RaftNode<Entry, T, D>
     foreach (int nodeId in nodeIds)
     {
       // TODO add cancelettion token for downgrading case
-      var voteTask = new Task<(int, bool)>(() => SendRequestVote(nodeId, currentTerm, id, commitIndex, commitTerm));
+      var voteTask = SendRequestVote(nodeId, currentTerm, id, commitIndex, commitTerm);
       var replyTask = voteTask.ContinueWith((task) => HandleRequestVoteReply(task.Result.Item1, task.Result.Item2));
       taskList.Add(voteTask);
       taskList.Add(replyTask);

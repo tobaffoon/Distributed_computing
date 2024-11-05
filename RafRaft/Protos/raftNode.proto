@@ -15,7 +15,7 @@ message AppendEntriesRequest{
     int32 leaderId = 2;
     int32 prevLogId = 3;
     int32 prevLogTerm = 4;
-    repeated bytes entries = 5;
+    map<string, int32> entries = 5;
     int32 leaderCommitId = 6;
 }
 
