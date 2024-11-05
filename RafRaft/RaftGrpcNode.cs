@@ -7,11 +7,11 @@ using RafRaft.Domain;
 
 namespace RafRaft;
 
-public abstract class RaftGrpcNode<T> : RaftListNode<T> where T : new()
+public abstract class RaftGrpcNode<T> : RaftNode<T> where T : new()
 {
   private readonly RaftNode.RaftNodeClient client;
 
-  public RaftGrpcNode(IPEndPoint EndPoint, long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds) : base(BroadcastTime, ElectionTimeout, NodeIds)
+  public RaftGrpcNode(IPEndPoint EndPoint, int Id, long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds) : base(Id, BroadcastTime, ElectionTimeout, NodeIds)
   {
     var builder = WebApplication.CreateBuilder();
 

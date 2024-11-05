@@ -11,26 +11,19 @@ public abstract class RaftNode<T> where T : new()
     Leader
   }
 
-  public readonly int Id;
+  public readonly int id;
 
   protected State nodeState = State.Follower;
   protected int currentTerm = 0;
   protected int? votedFor;
-  protected abstract IEnumerable<RaftLogEntry<T>> Log
-  {
-    get;
-  }
+  protected List<RaftLogEntry<T>> log;
   protected int commitIndex = 0;
   protected int commitTerm = 0;
   protected int lastApplied = 0;
-  protected abstract IEnumerable<int> NextIndex
-  {
-    get;
-  }
-  protected abstract IEnumerable<int> MatchIndex
-  {
-    get;
-  }
+  //TODO Implement NextIndex evaluation
+  protected List<int> nextIndex;
+  //TODO Implement MatchIndex evaluation
+  protected List<int> matchIndex;
   protected readonly T internalState;
   protected readonly long broadcastTimeout;
   protected readonly Timer broadcastTimer;
@@ -51,7 +44,7 @@ public abstract class RaftNode<T> where T : new()
     }
   }
 
-  public RaftNode(long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds)
+  public RaftNode(int Id, long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds)
   {
     broadcastTimeout = BroadcastTime;
     electionTimeout = ElectionTimeout;
@@ -61,7 +54,15 @@ public abstract class RaftNode<T> where T : new()
 
     internalState = new T();
 
-    nodeIds = new List<int>(NodeIds);
+    id = Id;
+
+    var nodesWithoutThis = NodeIds.Except([id]);
+    nodeIds = new List<int>(nodesWithoutThis);
+
+    nextIndex = new List<int>(nodeIds.Count);
+    matchIndex = new List<int>(nodeIds.Count);
+
+    log = new List<RaftLogEntry<T>>();
   }
 
   public abstract (int, bool) SendAppendEntries(int RecieverId, int Term, int LeaderId, int PrevLogIndex,
@@ -76,12 +77,19 @@ public abstract class RaftNode<T> where T : new()
 
   public abstract bool CompareEntries(RaftLogEntry<T> entryA, RaftLogEntry<T> entryB);
 
-  /// <summary>
-  /// Must set commitIndex and commitTerm.
-  /// </summary>
-  /// <param name="Entries"></param>
-  /// <returns>Index of last new entry</returns>
-  protected abstract int AppendEntries(IEnumerable<RaftLogEntry<T>>? Entries);
+  protected int AppendEntries(IEnumerable<RaftLogEntry<T>>? Entries)
+  {
+    if (Entries is null) return commitIndex; // or appened idk
+
+    foreach (RaftLogEntry<T> entry in Entries)
+    {
+      log.Add(entry);
+      commitIndex = entry.Index;
+      commitTerm = entry.Term;
+    }
+
+    return commitIndex;
+  }
 
   public void StartUp()
   {
@@ -104,7 +112,7 @@ public abstract class RaftNode<T> where T : new()
     CorrectLeader(LeaderId);
 
     #region Previous log entry discovery
-    RaftLogEntry<T>? prevEntry = Log.ElementAt(PrevLogIndex);
+    RaftLogEntry<T>? prevEntry = log[PrevLogIndex];
     if (prevEntry is null || prevEntry.Term != PrevLogTerm)
     {
       ReplyToAppendEntries(currentTerm, false);
@@ -127,7 +135,7 @@ public abstract class RaftNode<T> where T : new()
   {
     for (; lastApplied < commitIndex; lastApplied++)
     {
-      await Task.Run(() => Log.ElementAt(lastApplied + 1).action.Invoke(internalState));
+      await Task.Run(() => log[lastApplied + 1].action.Invoke(internalState));
     }
   }
 
@@ -180,7 +188,7 @@ public abstract class RaftNode<T> where T : new()
     foreach (int nodeId in nodeIds)
     {
       // TODO add cancelettion token for downgrading to follower case
-      var requestTask = new Task<(int, bool)>(() => SendAppendEntries(nodeId, currentTerm, Id, commitIndex, commitTerm, null, commitIndex));
+      var requestTask = new Task<(int, bool)>(() => SendAppendEntries(nodeId, currentTerm, id, commitIndex, commitTerm, null, commitIndex));
       var replyTask = requestTask.ContinueWith((task) => HandleHeartbeatReply(task.Result.Item1, task.Result.Item2));
       taskList.Add(requestTask);
       taskList.Add(replyTask);
@@ -199,14 +207,14 @@ public abstract class RaftNode<T> where T : new()
     votesGot = 0;
     currentTerm++;
 
-    votedFor = Id;
+    votedFor = id;
     votesGot++;
 
     List<Task> taskList = new List<Task>();
     foreach (int nodeId in nodeIds)
     {
       // TODO add cancelettion token for downgrading case
-      var voteTask = new Task<(int, bool)>(() => SendRequestVote(nodeId, currentTerm, Id, commitIndex, commitTerm));
+      var voteTask = new Task<(int, bool)>(() => SendRequestVote(nodeId, currentTerm, id, commitIndex, commitTerm));
       var replyTask = voteTask.ContinueWith((task) => HandleRequestVoteReply(task.Result.Item1, task.Result.Item2));
       taskList.Add(voteTask);
       taskList.Add(replyTask);
