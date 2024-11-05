@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-option csharp_namespace = "RaftRaft.Protos";
+option csharp_namespace = "RafRaft.Protos";
 
-package RaftRaft;
+package RafRaft;
 
 service RaftNode{
     rpc Heartbeat(AppendEntriesRequest) returns (AppendEntriesReply);
@@ -20,7 +20,7 @@ message AppendEntriesRequest{
 }
 
 message AppendEntriesReply{
-    int32 termId = 1;
+    int32 term = 1;
     bool success = 2;
 }
 
