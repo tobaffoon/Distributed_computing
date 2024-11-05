@@ -1,25 +1,37 @@
-using System;
+using System.Net;
+using RafRaft.Protos;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Grpc.Net.Client;
+using RaftRaft.Services;
 using RafRaft.Domain;
 
 namespace RafRaft;
 
-public class RaftGrpcNode<T> : RaftNode<T> where T : new()
+public abstract class RaftGrpcNode<T> : RaftListNode<T> where T : new()
 {
-  public RaftGrpcNode(long BroadcastTime, long ElectionTimeout) : base(BroadcastTime, ElectionTimeout)
+  private readonly RaftNode.RaftNodeClient client;
+
+  public RaftGrpcNode(IPEndPoint EndPoint, long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds) : base(BroadcastTime, ElectionTimeout, NodeIds)
   {
-  }
+    var builder = WebApplication.CreateBuilder();
 
-  protected override IEnumerable<RaftLogEntry<T>> Log => throw new NotImplementedException();
+    // Create server
+    builder.Services.AddGrpc();
+    builder.WebHost.ConfigureKestrel(options =>
+          {
+            options.Listen(EndPoint.Address, EndPoint.Port, configure =>
+            {
+              configure.Protocols = HttpProtocols.Http2;
+            });
+          });
 
-  protected override IEnumerable<int> NextIndex => throw new NotImplementedException();
+    var app = builder.Build();
+    app.MapGrpcService<RaftGrpcService>();
+    var serverTask = app.RunAsync();
 
-  protected override IEnumerable<int> MatchIndex => throw new NotImplementedException();
-
-  protected override IList<int> NodeIds => throw new NotImplementedException();
-
-  public override bool CompareEntries(RaftLogEntry<T> entryA, RaftLogEntry<T> entryB)
-  {
-    throw new NotImplementedException();
+    // Create client
+    var channel = GrpcChannel.ForAddress(EndPoint.ToString());
+    client = new RaftNode.RaftNodeClient(channel);
   }
 
   public override void ReplyToAppendEntries(int Term, bool Success)
@@ -38,11 +50,6 @@ public class RaftGrpcNode<T> : RaftNode<T> where T : new()
   }
 
   public override (int, bool) SendRequestVote(int RecieverId, int Term, int CandidateId, int LastLogIndex, int LastLogTerm)
-  {
-    throw new NotImplementedException();
-  }
-
-  protected override int AppendEntries(IEnumerable<RaftLogEntry<T>>? Entries)
   {
     throw new NotImplementedException();
   }
