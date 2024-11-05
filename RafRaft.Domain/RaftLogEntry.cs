@@ -2,9 +2,9 @@ using System;
 
 namespace RafRaft.Domain;
 
-public abstract record RaftLogEntry<T>(int Index, int Term, object Data)
+public abstract record RaftLogEntry<T, D>(int Index, int Term, D Data) where D : struct
 {
-  public virtual bool Equals(RaftLogEntry<T>? Entry)
+  public virtual bool Equals(RaftLogEntry<T, D>? Entry)
   {
     if (Entry is null) return false;
     return Data.Equals(Entry.Data);
