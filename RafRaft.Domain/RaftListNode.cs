@@ -1,20 +1,18 @@
-using System;
-
 namespace RafRaft.Domain;
 
 public abstract class RaftListNode<T> : RaftNode<T> where T : new()
 {
-  protected RaftListNode(long BroadcastTime, long ElectionTimeout) : base(BroadcastTime, ElectionTimeout)
+  protected RaftListNode(long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds) : base(BroadcastTime, ElectionTimeout, NodeIds)
   {
   }
 
-  private List<RaftLogEntry<T>> _log = new List<RaftLogEntry<T>>();
+  private readonly List<RaftLogEntry<T>> _log = [];
   protected override IEnumerable<RaftLogEntry<T>> Log => _log;
 
-  private List<int> _nextIndex = new List<int>();
+  private readonly List<int> _nextIndex = [];
   protected override IEnumerable<int> NextIndex => _nextIndex;
 
-  private List<int> _matchIndex = new List<int>();
+  private readonly List<int> _matchIndex = [];
   protected override IEnumerable<int> MatchIndex => _matchIndex;
 
   protected override int AppendEntries(IEnumerable<RaftLogEntry<T>>? Entries)
