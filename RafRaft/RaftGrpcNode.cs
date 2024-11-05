@@ -7,7 +7,9 @@ using RafRaft.Domain;
 
 namespace RafRaft;
 
-public abstract class RaftGrpcNode<T> : RaftNode<T> where T : new()
+public class RaftGrpcNode<LogEntry, T> : RaftNode<LogEntry, T>
+  where LogEntry : RaftLogEntry<T>
+  where T : new()
 {
   private readonly RaftNode.RaftNodeClient client;
 
@@ -44,7 +46,7 @@ public abstract class RaftGrpcNode<T> : RaftNode<T> where T : new()
     throw new NotImplementedException();
   }
 
-  public override (int, bool) SendAppendEntries(int RecieverId, int Term, int LeaderId, int PrevLogIndex, int PrevLogTerm, IEnumerable<RaftLogEntry<T>>? Entries, int LeaderCommit)
+  public override (int, bool) SendAppendEntries(int RecieverId, int Term, int LeaderId, int PrevLogIndex, int PrevLogTerm, IEnumerable<LogEntry>? Entries, int LeaderCommit)
   {
     throw new NotImplementedException();
   }

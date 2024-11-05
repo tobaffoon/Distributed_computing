@@ -2,7 +2,9 @@ using System.Threading;
 
 namespace RafRaft.Domain;
 
-public abstract class RaftNode<T> where T : new()
+public abstract class RaftNode<LogEntry, T>
+  where LogEntry : RaftLogEntry<T>
+  where T : new()
 {
   public enum State
   {
@@ -16,7 +18,7 @@ public abstract class RaftNode<T> where T : new()
   protected State nodeState = State.Follower;
   protected int currentTerm = 0;
   protected int? votedFor;
-  protected List<RaftLogEntry<T>> log;
+  protected List<LogEntry> log;
   protected int commitIndex = 0;
   protected int commitTerm = 0;
   protected int lastApplied = 0;
@@ -62,11 +64,11 @@ public abstract class RaftNode<T> where T : new()
     nextIndex = new List<int>(nodeIds.Count);
     matchIndex = new List<int>(nodeIds.Count);
 
-    log = new List<RaftLogEntry<T>>();
+    log = new List<LogEntry>();
   }
 
   public abstract (int, bool) SendAppendEntries(int RecieverId, int Term, int LeaderId, int PrevLogIndex,
-    int PrevLogTerm, IEnumerable<RaftLogEntry<T>>? Entries, int LeaderCommit);
+    int PrevLogTerm, IEnumerable<LogEntry>? Entries, int LeaderCommit);
 
   public abstract (int, bool) SendRequestVote(int RecieverId, int Term, int CandidateId,
     int LastLogIndex, int LastLogTerm);
@@ -75,13 +77,11 @@ public abstract class RaftNode<T> where T : new()
 
   public abstract void ReplyToRequestVote(int Term, bool VoteGranted);
 
-  public abstract bool CompareEntries(RaftLogEntry<T> entryA, RaftLogEntry<T> entryB);
-
-  protected int AppendEntries(IEnumerable<RaftLogEntry<T>>? Entries)
+  protected int AppendEntries(IEnumerable<LogEntry>? Entries)
   {
     if (Entries is null) return commitIndex; // or appened idk
 
-    foreach (RaftLogEntry<T> entry in Entries)
+    foreach (LogEntry entry in Entries)
     {
       log.Add(entry);
       commitIndex = entry.Index;
@@ -97,7 +97,7 @@ public abstract class RaftNode<T> where T : new()
   }
 
   public void HandleAppendEntries(int Term, int LeaderId, int PrevLogIndex,
-    int PrevLogTerm, IEnumerable<RaftLogEntry<T>>? Entries, int LeaderCommit)
+    int PrevLogTerm, IEnumerable<LogEntry>? Entries, int LeaderCommit)
   {
     HeartbeatRecieved = true;
 
@@ -112,7 +112,7 @@ public abstract class RaftNode<T> where T : new()
     CorrectLeader(LeaderId);
 
     #region Previous log entry discovery
-    RaftLogEntry<T>? prevEntry = log[PrevLogIndex];
+    LogEntry? prevEntry = log[PrevLogIndex];
     if (prevEntry is null || prevEntry.Term != PrevLogTerm)
     {
       ReplyToAppendEntries(currentTerm, false);
@@ -135,7 +135,7 @@ public abstract class RaftNode<T> where T : new()
   {
     for (; lastApplied < commitIndex; lastApplied++)
     {
-      await Task.Run(() => log[lastApplied + 1].action.Invoke(internalState));
+      await Task.Run(() => log[lastApplied + 1].Apply(internalState));
     }
   }
 
