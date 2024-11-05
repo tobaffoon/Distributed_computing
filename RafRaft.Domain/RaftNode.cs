@@ -36,11 +36,8 @@ public abstract class RaftNode<T> where T : new()
   protected readonly Timer broadcastTimer;
   protected readonly long electionTimeout;
   protected readonly Timer electionTimer;
-  protected abstract IList<int> NodeIds
-  {
-    get;
-  }
-  protected int ClusterSize => NodeIds.Count + 1;
+  protected List<int> nodeIds;
+  protected int ClusterSize => nodeIds.Count + 1;
   protected int leaderId;
   protected int votesGot = 0;
   private int _heartbeatRecievedBackValue = 0;
@@ -54,7 +51,7 @@ public abstract class RaftNode<T> where T : new()
     }
   }
 
-  public RaftNode(long BroadcastTime, long ElectionTimeout)
+  public RaftNode(long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds)
   {
     broadcastTimeout = BroadcastTime;
     electionTimeout = ElectionTimeout;
@@ -63,6 +60,8 @@ public abstract class RaftNode<T> where T : new()
     electionTimer = new Timer(OnElectionElapsed, null, Timeout.Infinite, electionTimeout);
 
     internalState = new T();
+
+    nodeIds = new List<int>(NodeIds);
   }
 
   public abstract (int, bool) SendAppendEntries(int RecieverId, int Term, int LeaderId, int PrevLogIndex,
@@ -178,7 +177,7 @@ public abstract class RaftNode<T> where T : new()
   {
     // Heartbeat
     List<Task> taskList = new List<Task>();
-    foreach (int nodeId in NodeIds)
+    foreach (int nodeId in nodeIds)
     {
       // TODO add cancelettion token for downgrading to follower case
       var requestTask = new Task<(int, bool)>(() => SendAppendEntries(nodeId, currentTerm, Id, commitIndex, commitTerm, null, commitIndex));
@@ -204,7 +203,7 @@ public abstract class RaftNode<T> where T : new()
     votesGot++;
 
     List<Task> taskList = new List<Task>();
-    foreach (int nodeId in NodeIds)
+    foreach (int nodeId in nodeIds)
     {
       // TODO add cancelettion token for downgrading case
       var voteTask = new Task<(int, bool)>(() => SendRequestVote(nodeId, currentTerm, Id, commitIndex, commitTerm));
