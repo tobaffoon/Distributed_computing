@@ -72,8 +72,18 @@ public class RaftMapGrpcNode : RaftNode<RaftMapEntry<string, int>, Dictionary<st
     return (reply.Term, reply.Success);
   }
 
-  public override Task<(int, bool)> SendRequestVote(int RecieverId, int Term, int CandidateId, int LastLogIndex, int LastLogTerm)
+  public override async Task<(int, bool)> SendRequestVote(int RecieverId, int Term, int CandidateId, int LastLogIndex, int LastLogTerm)
   {
-    throw new NotImplementedException();
+    var reciever = clients[RecieverId];
+    var request = new VoteRequest
+    {
+      Term = Term,
+      CandidateId = CandidateId,
+      LastLogId = LastLogIndex,
+      LastLogTerm = LastLogTerm
+    };
+
+    VoteReply reply = await reciever.RequestVoteAsync(request);
+    return (reply.Term, reply.VoteGranted);
   }
 }
