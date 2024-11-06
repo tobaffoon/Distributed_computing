@@ -230,16 +230,15 @@ public abstract class RaftNode<Entry, T>
 
   protected async void BeginElection()
   {
-    votesGot = 0;
     CurrentTerm++;
 
     VotedFor = id;
-    votesGot++;
+    votesGot = 1;
 
     List<Task> taskList = new List<Task>();
     foreach (int nodeId in nodeIds)
     {
-      // TODO add cancelettion token for downgrading case
+      // TODO add cancelettion token for downgrading case and new election
       var voteTask = SendRequestVote(nodeId, CurrentTerm, id, commitIndex, commitTerm);
       var replyTask = voteTask.ContinueWith((task) => HandleRequestVoteReply(task.Result.Item1, task.Result.Item2));
       taskList.Add(voteTask);
