@@ -68,7 +68,7 @@ public class RaftMapGrpcNode : RaftNode<RaftMapEntry<string, int>, Dictionary<st
       request.Entries.Add(dict);
     }
 
-    var reply = await reciever.AppendEntriesAsync(request);
+    AppendEntriesReply reply = await reciever.AppendEntriesAsync(request);
     return (reply.Term, reply.Success);
   }
 
