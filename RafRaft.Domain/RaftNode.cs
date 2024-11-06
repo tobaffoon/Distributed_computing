@@ -22,7 +22,16 @@ public abstract class RaftNode<Entry, T>
     get => _currentTerm;
     set => _currentTerm = value;
   }
-  protected int? votedFor;
+  private int? _votedFor;
+  protected int? VotedFor
+  {
+    get => _votedFor;
+    set
+    {
+      _votedFor = value;
+      VoteGranted = true;
+    }
+  }
   protected List<Entry> log;
   protected int commitIndex = 0;
   protected int commitTerm = 0;
@@ -48,6 +57,16 @@ public abstract class RaftNode<Entry, T>
     {
       if (value) Interlocked.CompareExchange(ref _heartbeatRecievedBackValue, 1, 0);
       else Interlocked.CompareExchange(ref _heartbeatRecievedBackValue, 0, 1);
+    }
+  }
+  private int _voteGrantedBackValue = 0;
+  protected bool VoteGranted
+  {
+    get { return Interlocked.CompareExchange(ref _voteGrantedBackValue, 1, 1) == 1; }
+    set
+    {
+      if (value) Interlocked.CompareExchange(ref _voteGrantedBackValue, 1, 0);
+      else Interlocked.CompareExchange(ref _voteGrantedBackValue, 0, 1);
     }
   }
 
@@ -171,7 +190,7 @@ public abstract class RaftNode<Entry, T>
 
     if (CanGrantVote(CandidateId) && IsNewLogBetter(LastLogIndex, LastLogTerm))
     {
-      votedFor = CandidateId;
+      VotedFor = CandidateId;
       ReplyToRequestVote(CandidateId, CurrentTerm, true);
     }
     else
@@ -181,7 +200,7 @@ public abstract class RaftNode<Entry, T>
   }
   private bool CanGrantVote(int CandidateId)
   {
-    return votedFor is null || votedFor == CandidateId;
+    return VotedFor is null || VotedFor == CandidateId;
   }
   private bool IsNewLogBetter(int NewLogIndex, int NewLogTerm)
   {
@@ -214,7 +233,7 @@ public abstract class RaftNode<Entry, T>
     votesGot = 0;
     CurrentTerm++;
 
-    votedFor = id;
+    VotedFor = id;
     votesGot++;
 
     List<Task> taskList = new List<Task>();
@@ -242,14 +261,15 @@ public abstract class RaftNode<Entry, T>
 
   protected void OnElectionElapsed(object? Ignored)
   {
-    if (nodeState != State.Leader) return;
+    if (nodeState == State.Leader) return;
 
-    if (!HeartbeatRecieved)
+    if (!HeartbeatRecieved && !VoteGranted)
     {
       BecomeCandidate();
       return;
     }
 
+    VoteGranted = false;
     HeartbeatRecieved = false;
   }
 
