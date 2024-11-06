@@ -16,7 +16,12 @@ public abstract class RaftNode<Entry, T>
   public readonly int id;
 
   protected State nodeState = State.Follower;
-  protected int currentTerm = 0;
+  private int _currentTerm = 0;
+  protected int CurrentTerm
+  {
+    get => _currentTerm;
+    set => _currentTerm = value;
+  }
   protected int? votedFor;
   protected List<Entry> log;
   protected int commitIndex = 0;
@@ -73,9 +78,11 @@ public abstract class RaftNode<Entry, T>
   public abstract Task<(int, bool)> SendRequestVote(int RecieverId, int Term, int CandidateId,
     int LastLogIndex, int LastLogTerm);
 
-  public abstract Task ReplyToAppendEntries(int Term, bool Success);
+  public abstract Task ReplyToAppendEntries(int SenderId, int Term, bool Success);
 
-  public abstract Task ReplyToRequestVote(int Term, bool VoteGranted);
+  public abstract Task ReplyToRequestVote(int SenderId, int Term, bool VoteGranted);
+
+  public abstract Task RedirectUserRequest(int LeaderId, object Data);
 
   protected int AppendEntries(IEnumerable<Entry>? Entries)
   {
@@ -102,9 +109,9 @@ public abstract class RaftNode<Entry, T>
     HeartbeatRecieved = true;
 
     #region Term correction
-    if (Term < currentTerm)
+    if (Term < CurrentTerm)
     {
-      ReplyToAppendEntries(currentTerm, false);
+      ReplyToAppendEntries(LeaderId, CurrentTerm, false);
     }
     CorrectTerm(Term);
     #endregion
@@ -115,7 +122,7 @@ public abstract class RaftNode<Entry, T>
     Entry? prevEntry = log[PrevLogIndex];
     if (prevEntry is null || prevEntry.Term != PrevLogTerm)
     {
-      ReplyToAppendEntries(currentTerm, false);
+      ReplyToAppendEntries(LeaderId, CurrentTerm, false);
     }
     #endregion
 
@@ -128,7 +135,7 @@ public abstract class RaftNode<Entry, T>
 
     ApplyCommited();
 
-    ReplyToAppendEntries(currentTerm, true);
+    ReplyToAppendEntries(LeaderId, CurrentTerm, true);
   }
 
   protected async void ApplyCommited()
@@ -141,9 +148,9 @@ public abstract class RaftNode<Entry, T>
 
   protected void CorrectTerm(int Term)
   {
-    if (Term > currentTerm)
+    if (Term > CurrentTerm)
     {
-      currentTerm = Term;
+      CurrentTerm = Term;
       BecomeFollower();
     }
   }
@@ -156,20 +163,20 @@ public abstract class RaftNode<Entry, T>
   public void HandleRequestVote(int Term, int CandidateId,
     int LastLogIndex, int LastLogTerm)
   {
-    if (Term < currentTerm)
+    if (Term < CurrentTerm)
     {
-      ReplyToRequestVote(currentTerm, false);
+      ReplyToRequestVote(CandidateId, CurrentTerm, false);
     }
     CorrectTerm(Term);
 
     if (CanGrantVote(CandidateId) && IsNewLogBetter(LastLogIndex, LastLogTerm))
     {
       votedFor = CandidateId;
-      ReplyToRequestVote(currentTerm, true);
+      ReplyToRequestVote(CandidateId, CurrentTerm, true);
     }
     else
     {
-      ReplyToRequestVote(currentTerm, false);
+      ReplyToRequestVote(CandidateId, CurrentTerm, false);
     }
   }
   private bool CanGrantVote(int CandidateId)
@@ -188,7 +195,7 @@ public abstract class RaftNode<Entry, T>
     foreach (int nodeId in nodeIds)
     {
       // TODO add cancelettion token for downgrading to follower case
-      var requestTask = SendAppendEntries(nodeId, currentTerm, id, commitIndex, commitTerm, null, commitIndex);
+      var requestTask = SendAppendEntries(nodeId, CurrentTerm, id, commitIndex, commitTerm, null, commitIndex);
       var replyTask = requestTask.ContinueWith((task) => HandleHeartbeatReply(task.Result.Item1, task.Result.Item2));
       taskList.Add(requestTask);
       taskList.Add(replyTask);
@@ -205,7 +212,7 @@ public abstract class RaftNode<Entry, T>
   protected async void BeginElection()
   {
     votesGot = 0;
-    currentTerm++;
+    CurrentTerm++;
 
     votedFor = id;
     votesGot++;
@@ -214,7 +221,7 @@ public abstract class RaftNode<Entry, T>
     foreach (int nodeId in nodeIds)
     {
       // TODO add cancelettion token for downgrading case
-      var voteTask = SendRequestVote(nodeId, currentTerm, id, commitIndex, commitTerm);
+      var voteTask = SendRequestVote(nodeId, CurrentTerm, id, commitIndex, commitTerm);
       var replyTask = voteTask.ContinueWith((task) => HandleRequestVoteReply(task.Result.Item1, task.Result.Item2));
       taskList.Add(voteTask);
       taskList.Add(replyTask);
@@ -274,5 +281,32 @@ public abstract class RaftNode<Entry, T>
   protected bool VotesAreEnough()
   {
     return votesGot * 2 > ClusterSize;
+  }
+
+  protected abstract Entry CreateLogEntry(int Index, int Term, object Data);
+
+  protected void HandleUserRequest(object Data)
+  {
+    // TODO: batch SendAppendEntries call
+    if (nodeState == State.Follower)
+    {
+      RedirectUserRequest(leaderId, Data);
+      return;
+    }
+    if (nodeState == State.Candidate)
+    {
+      // TODO
+      return;
+    }
+
+    commitIndex++;
+    Entry entry = CreateLogEntry(commitIndex, CurrentTerm, Data);
+    log.Add(entry);
+
+    Entry prevLog = log[^1];
+    foreach (int followerId in nodeIds)
+    {
+      SendAppendEntries(followerId, CurrentTerm, id, prevLog.Index, prevLog.Term, [entry], commitIndex);
+    }
   }
 }

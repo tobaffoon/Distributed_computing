@@ -41,12 +41,17 @@ public class RaftMapGrpcNode : RaftNode<RaftMapEntry<string, int>, Dictionary<st
     }
   }
 
-  public override Task ReplyToAppendEntries(int Term, bool Success)
+  public override Task RedirectUserRequest(int LeaderId, object Data)
   {
     throw new NotImplementedException();
   }
 
-  public override Task ReplyToRequestVote(int Term, bool VoteGranted)
+  public override Task ReplyToAppendEntries(int SenderId, int Term, bool Success)
+  {
+    throw new NotImplementedException();
+  }
+
+  public override Task ReplyToRequestVote(int SenderId, int Term, bool VoteGranted)
   {
     throw new NotImplementedException();
   }
@@ -85,5 +90,17 @@ public class RaftMapGrpcNode : RaftNode<RaftMapEntry<string, int>, Dictionary<st
 
     VoteReply reply = await reciever.RequestVoteAsync(request);
     return (reply.Term, reply.VoteGranted);
+  }
+
+  protected override RaftMapEntry<string, int> CreateLogEntry(int Index, int Term, object Data)
+  {
+    if (Data is not (string, int))
+    {
+      throw new ArgumentException($@"Cannot create {nameof(RaftMapEntry<string, int>)} inside {nameof(RaftMapGrpcNode)}
+        because Data is not of type {typeof((string, int))}, but of {Data.GetType().FullName} instead");
+    }
+
+    (string, int) kvPair = ((string, int))Data;
+    return new RaftMapEntry<string, int>(Index, Term, kvPair);
   }
 }
