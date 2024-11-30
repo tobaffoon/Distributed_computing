@@ -1,17 +1,23 @@
-using System;
-
 namespace RafRaft.Domain;
 
-public abstract record RaftLogEntry<T>(int Index, int Term, object Data)
+public abstract record RaftLogEntry<TDataIn, TDataOut>
+   where TDataIn : struct
+   where TDataOut : struct
 {
-  public virtual bool Equals(RaftLogEntry<T>? Entry)
-  {
-    if (Entry is null) return false;
-    return Data.Equals(Entry.Data);
-  }
-  public override int GetHashCode()
-  {
-    return Data.GetHashCode();
-  }
-  public abstract void Apply(T InternalState);
+   public int Index { get; init; }
+   public int Term { get; init; }
+   public required TDataIn Data { get; init; }
+
+   public abstract void Apply(IRaftStateMachine<TDataOut> InternalState);
+
+   public virtual bool Equals(RaftLogEntry<TDataIn, TDataOut>? Entry)
+   {
+      if (Entry is null) return false;
+
+      return Data.Equals(Entry.Data);
+   }
+   public override int GetHashCode()
+   {
+      return Data.GetHashCode();
+   }
 }
