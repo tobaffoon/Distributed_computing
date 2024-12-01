@@ -1,9 +1,12 @@
-
-namespace RafRaft.Domain;
-
-public abstract class RaftMapNode : RaftNode<RaftMapStateMachine, Dictionary<string, object>, object>
+namespace RafRaft.RaftMap
 {
-   protected RaftMapNode(int Id, long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds) : base(Id, BroadcastTime, ElectionTimeout, NodeIds)
+   using RafRaft.Domain;
+
+   public abstract class RaftMapNode<T> : RaftNode<RaftMapStateMachine<T>, KeyValuePair<string, T>, T>
+      where T : notnull
    {
+      protected RaftMapNode(int Id, long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds) : base(Id, BroadcastTime, ElectionTimeout, NodeIds)
+      {
+      }
    }
 }

@@ -1,18 +1,20 @@
-namespace RafRaft.Domain;
-
-public class RaftMapStateMachine : IRaftStateMachine<Dictionary<string, object>, object>
+namespace RafRaft.RaftMap
 {
-   public Dictionary<string, object> State { get; } = [];
-   public void Apply(RaftLogEntry<Dictionary<string, object>> logEntry)
-   {
-      foreach (var entry in logEntry.Data)
-      {
-         State[entry.Key] = entry.Value;
-      }
-   }
+   using RafRaft.Domain;
 
-   public object RequestData(string param)
+   public class RaftMapStateMachine<T> : IRaftStateMachine<KeyValuePair<string, T>, T>
+      where T : notnull
    {
-      return State[param];
+      public Dictionary<string, T> State { get; } = [];
+
+      public void Apply(RaftLogEntry<KeyValuePair<string, T>> entry)
+      {
+         State[entry.Data.Key] = entry.Data.Value;
+      }
+
+      public T RequestData(string param)
+      {
+         return State[param];
+      }
    }
 }

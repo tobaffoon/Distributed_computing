@@ -5,7 +5,7 @@ option csharp_namespace = "RafRaft.Protos";
 
 package RafRaft;
 
-service RaftNodeService{
+service RaftMediator{
     rpc Heartbeat(AppendEntriesRequest) returns (AppendEntriesReply);
     rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesReply);
     rpc RequestVote(VoteRequest) returns (VoteReply);
@@ -45,5 +45,5 @@ message Data {
 }
 
 message Object {
-   map<string, google.protobuf.Value> object = 1;
+   map<string, Data> object = 1;
 }

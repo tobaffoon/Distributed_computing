@@ -1,34 +1,36 @@
-using Grpc.Core;
-using RafRaft.Protos;
-
-namespace RaftRaft.Services;
-
-internal class RaftGrpcService : RaftNodeService.RaftNodeServiceBase
+namespace RafRaft.Services
 {
-   public override Task<AppendEntriesReply> Heartbeat(AppendEntriesRequest request, ServerCallContext context)
-   {
-      return Task.FromResult(new AppendEntriesReply
-      {
-         Term = 1,
-         Success = true
-      });
-   }
+   using Grpc.Core;
+   using RafRaft.Domain;
+   using RafRaft.Protos;
 
-   public override Task<AppendEntriesReply> AppendEntries(AppendEntriesRequest request, ServerCallContext context)
+   public class RaftGrpcService : RaftMediator.RaftMediatorBase
    {
-      return Task.FromResult(new AppendEntriesReply
+      public override Task<AppendEntriesReply> Heartbeat(AppendEntriesRequest request, ServerCallContext context)
       {
-         Term = 1,
-         Success = true
-      });
-   }
+         return Task.FromResult(new AppendEntriesReply
+         {
+            Term = 1,
+            Success = true
+         });
+      }
 
-   public override Task<VoteReply> RequestVote(VoteRequest request, ServerCallContext context)
-   {
-      return Task.FromResult(new VoteReply
+      public override Task<AppendEntriesReply> AppendEntries(AppendEntriesRequest request, ServerCallContext context)
       {
-         Term = 1,
-         VoteGranted = false
-      });
+         return Task.FromResult(new AppendEntriesReply
+         {
+            Term = 1,
+            Success = true
+         });
+      }
+
+      public override Task<VoteReply> RequestVote(VoteRequest request, ServerCallContext context)
+      {
+         return Task.FromResult(new VoteReply
+         {
+            Term = 1,
+            VoteGranted = false
+         });
+      }
    }
 }
