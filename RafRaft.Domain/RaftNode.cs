@@ -1,10 +1,9 @@
 namespace RafRaft.Domain;
 
-public abstract class RaftNode<TEntry, TState, TDataIn, TDataOut>
-  where TEntry : RaftLogEntry<TDataIn, TDataOut>
-  where TState : IRaftStateMachine<TDataOut>, new()
-  where TDataIn : struct
-  where TDataOut : struct
+public abstract class RaftNode<TState, TDataIn, TDataOut>
+  where TState : IRaftStateMachine<TDataIn, TDataOut>, new()
+  where TDataIn : notnull
+  where TDataOut : notnull
 {
    public enum State
    {
@@ -33,7 +32,7 @@ public abstract class RaftNode<TEntry, TState, TDataIn, TDataOut>
          VoteGranted = true;
       }
    }
-   protected List<TEntry> log;
+   protected List<RaftLogEntry<TDataIn>> log;
    protected int commitIndex = 0;
    protected int commitTerm = 0;
    protected int lastApplied = 0;
@@ -89,11 +88,11 @@ public abstract class RaftNode<TEntry, TState, TDataIn, TDataOut>
       nextIndex = new List<int>(nodeIds.Count);
       matchIndex = new List<int>(nodeIds.Count);
 
-      log = new List<TEntry>();
+      log = new List<RaftLogEntry<TDataIn>>();
    }
 
    public abstract Task<(int, bool)> SendAppendEntries(int RecieverId, int Term, int LeaderId, int PrevLogIndex,
-     int PrevLogTerm, IEnumerable<TEntry>? Entries, int LeaderCommit);
+     int PrevLogTerm, IEnumerable<RaftLogEntry<TDataIn>>? Entries, int LeaderCommit);
 
    public abstract Task<(int, bool)> SendRequestVote(int RecieverId, int Term, int CandidateId,
      int LastLogIndex, int LastLogTerm);
@@ -104,11 +103,11 @@ public abstract class RaftNode<TEntry, TState, TDataIn, TDataOut>
 
    public abstract Task RedirectUserRequest(int LeaderId, object Data);
 
-   protected int AppendEntries(IEnumerable<TEntry>? Entries)
+   protected int AppendEntries(IEnumerable<RaftLogEntry<TDataIn>>? Entries)
    {
       if (Entries is null) return commitIndex; // or appened idk
 
-      foreach (TEntry entry in Entries)
+      foreach (RaftLogEntry<TDataIn> entry in Entries)
       {
          log.Add(entry);
          commitIndex = entry.Index;
@@ -124,7 +123,7 @@ public abstract class RaftNode<TEntry, TState, TDataIn, TDataOut>
    }
 
    public void HandleAppendEntries(int Term, int LeaderId, int PrevLogIndex,
-     int PrevLogTerm, IEnumerable<TEntry>? Entries, int LeaderCommit)
+     int PrevLogTerm, IEnumerable<RaftLogEntry<TDataIn>>? Entries, int LeaderCommit)
    {
       HeartbeatRecieved = true;
 
@@ -139,7 +138,7 @@ public abstract class RaftNode<TEntry, TState, TDataIn, TDataOut>
       CorrectLeader(LeaderId);
 
       #region Previous log entry discovery
-      TEntry? prevEntry = log[PrevLogIndex];
+      RaftLogEntry<TDataIn>? prevEntry = log[PrevLogIndex];
       if (prevEntry is null || prevEntry.Term != PrevLogTerm)
       {
          ReplyToAppendEntries(LeaderId, CurrentTerm, false);
@@ -162,7 +161,7 @@ public abstract class RaftNode<TEntry, TState, TDataIn, TDataOut>
    {
       for (; lastApplied < commitIndex; lastApplied++)
       {
-         await Task.Run(() => log[lastApplied + 1].Apply(internalState));
+         await Task.Run(() => internalState.Apply(log[lastApplied + 1]));
       }
    }
 
@@ -303,7 +302,7 @@ public abstract class RaftNode<TEntry, TState, TDataIn, TDataOut>
       return votesGot * 2 > ClusterSize;
    }
 
-   protected abstract TEntry CreateLogEntry(int Index, int Term, object Data);
+   protected abstract RaftLogEntry<TDataIn> CreateLogEntry(int Index, int Term, object Data);
 
    protected void HandleUserRequest(object Data)
    {
@@ -320,10 +319,10 @@ public abstract class RaftNode<TEntry, TState, TDataIn, TDataOut>
       }
 
       commitIndex++;
-      TEntry entry = CreateLogEntry(commitIndex, CurrentTerm, Data);
+      RaftLogEntry<TDataIn> entry = CreateLogEntry(commitIndex, CurrentTerm, Data);
       log.Add(entry);
 
-      TEntry prevLog = log[^1];
+      RaftLogEntry<TDataIn> prevLog = log[^1];
       foreach (int followerId in nodeIds)
       {
          SendAppendEntries(followerId, CurrentTerm, id, prevLog.Index, prevLog.Term, [entry], commitIndex);

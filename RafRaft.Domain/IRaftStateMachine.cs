@@ -1,13 +1,19 @@
 namespace RafRaft.Domain;
 
-public interface IRaftStateMachine<TDataOut>
-   where TDataOut : struct
+public interface IRaftStateMachine<TDataIn, TDataOut>
+   where TDataIn : notnull
+   where TDataOut : notnull
 {
    /// <summary>
-   /// Finds the string representation of the state machine, limited by the given command.
+   /// Applies changes to the state machine, changes are specified in log entry. 
+   /// </summary>
+   void Apply(RaftLogEntry<TDataIn> logEntry);
+
+   /// <summary>
+   /// Finds the subsection of the state machine, limited by the given command.
    /// </summary>
    /// <param name="param">Limits, filters or specifies the information to retrieve.</param>
-   /// <returns>A string containing the specified representation of the state machine</returns>
+   /// <returns>A struct containing the specified representation of the state machine</returns>
    TDataOut RequestData(string param);
 
    /// <summary>
