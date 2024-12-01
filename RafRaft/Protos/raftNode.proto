@@ -1,10 +1,11 @@
 syntax = "proto3";
+import "google/protobuf/struct.proto";
 
 option csharp_namespace = "RafRaft.Protos";
 
 package RafRaft;
 
-service RaftNode{
+service RaftNodeService{
     rpc Heartbeat(AppendEntriesRequest) returns (AppendEntriesReply);
     rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesReply);
     rpc RequestVote(VoteRequest) returns (VoteReply);
@@ -15,8 +16,8 @@ message AppendEntriesRequest{
     int32 leaderId = 2;
     int32 prevLogId = 3;
     int32 prevLogTerm = 4;
-    map<string, int32> entries = 5;
-    int32 leaderCommitId = 6;
+    map<string, Data> entries = 5;
+    int32 leaderCommitId = 8;
 }
 
 message AppendEntriesReply{
@@ -34,4 +35,15 @@ message VoteRequest{
 message VoteReply{
     int32 term = 1;
     bool voteGranted = 2;
+}
+
+message Data {
+   oneof Data {
+      google.protobuf.Value value = 1;
+      Object object = 2;
+   }
+}
+
+message Object {
+   map<string, google.protobuf.Value> object = 1;
 }
