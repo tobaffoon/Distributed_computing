@@ -12,8 +12,8 @@ namespace RafRaft.Domain
       /// <summary>
       /// Finds the subsection of the state machine, limited by the given command.
       /// </summary>
-      /// <param name="param">Limits, filters or specifies the information to retrieve.</param>
+      /// <param name="userRequest">Limits, filters or specifies the information to retrieve.</param>
       /// <returns>A struct containing the specified representation of the state machine</returns>
-      TDataOut RequestData(string param);
+      TDataOut RequestData(string userRequest);
    }
 }

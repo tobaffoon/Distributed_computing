@@ -1,6 +1,8 @@
+using RafRaft.Domain.Messages;
+
 namespace RafRaft.Domain
 {
-   public abstract class RaftNode<TState, TDataIn, TDataOut>
+   public class RaftNode<TState, TDataIn, TDataOut>
      where TState : IRaftStateMachine<TDataIn, TDataOut>, new()
      where TDataIn : notnull
      where TDataOut : notnull
@@ -14,43 +16,43 @@ namespace RafRaft.Domain
       }
 
       public readonly int id;
-
-      protected State nodeState = State.Follower;
+      private readonly IRaftMediator<TDataIn> mediator;
+      private State nodeState = State.Follower;
       private int _currentTerm = 0;
-      protected int CurrentTerm
+      private int CurrentTerm
       {
          get => _currentTerm;
          set => _currentTerm = value;
       }
       private int? _votedFor;
-      protected int? VotedFor
+      private int? VotedFor
       {
          get => _votedFor;
          set
          {
             _votedFor = value;
-            VoteGranted = true;
+            Voted = true;
          }
       }
-      protected List<RaftLogEntry<TDataIn>> log;
-      protected int commitIndex = 0;
-      protected int commitTerm = 0;
-      protected int lastApplied = 0;
+      private List<RaftLogEntry<TDataIn>> log;
+      private int commitIndex = 0;
+      private int commitTerm = 0;
+      private int lastApplied = 0;
       //TODO Implement NextIndex evaluation
-      protected List<int> nextIndex;
+      private List<int> nextIndex;
       //TODO Implement MatchIndex evaluation
-      protected List<int> matchIndex;
-      protected readonly TState internalState;
-      protected readonly long broadcastTimeout;
-      protected readonly Timer broadcastTimer;
-      protected readonly long electionTimeout;
-      protected readonly Timer electionTimer;
-      protected List<int> nodeIds;
-      protected int ClusterSize => nodeIds.Count + 1;
-      protected int leaderId;
-      protected int votesGot = 0;
+      private List<int> matchIndex;
+      private readonly TState internalState;
+      private readonly long broadcastTimeout;
+      private readonly Timer broadcastTimer;
+      private readonly long electionTimeout;
+      private readonly Timer electionTimer;
+      private List<int> nodeIds;
+      private int ClusterSize => nodeIds.Count + 1;
+      private int leaderId;
+      private int votesGot = 0;
       private int _heartbeatRecievedBackValue = 0;
-      protected bool HeartbeatRecieved
+      private bool HeartbeatRecieved
       {
          get { return Interlocked.CompareExchange(ref _heartbeatRecievedBackValue, 1, 1) == 1; }
          set
@@ -59,18 +61,18 @@ namespace RafRaft.Domain
             else Interlocked.CompareExchange(ref _heartbeatRecievedBackValue, 0, 1);
          }
       }
-      private int _voteGrantedBackValue = 0;
-      protected bool VoteGranted
+      private int _votedBackValue = 0;
+      private bool Voted
       {
-         get { return Interlocked.CompareExchange(ref _voteGrantedBackValue, 1, 1) == 1; }
+         get { return Interlocked.CompareExchange(ref _votedBackValue, 1, 1) == 1; }
          set
          {
-            if (value) Interlocked.CompareExchange(ref _voteGrantedBackValue, 1, 0);
-            else Interlocked.CompareExchange(ref _voteGrantedBackValue, 0, 1);
+            if (value) Interlocked.CompareExchange(ref _votedBackValue, 1, 0);
+            else Interlocked.CompareExchange(ref _votedBackValue, 0, 1);
          }
       }
 
-      public RaftNode(int Id, long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds)
+      public RaftNode(int Id, long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds, IRaftMediator<TDataIn> mediator)
       {
          broadcastTimeout = BroadcastTime;
          electionTimeout = ElectionTimeout;
@@ -85,27 +87,80 @@ namespace RafRaft.Domain
          var nodesWithoutThis = NodeIds.Except([id]);
          nodeIds = new List<int>(nodesWithoutThis);
 
+         this.mediator = mediator;
+
          nextIndex = new List<int>(nodeIds.Count);
          matchIndex = new List<int>(nodeIds.Count);
 
          log = new List<RaftLogEntry<TDataIn>>();
       }
 
-      public abstract Task<(int, bool)> SendAppendEntries(int RecieverId, int Term, int LeaderId, int PrevLogIndex,
-        int PrevLogTerm, IEnumerable<RaftLogEntry<TDataIn>>? Entries, int LeaderCommit);
-
-      public abstract Task<(int, bool)> SendRequestVote(int RecieverId, int Term, int CandidateId,
-        int LastLogIndex, int LastLogTerm);
-
-      public abstract Task ReplyToAppendEntries(int SenderId, int Term, bool Success);
-
-      public abstract Task ReplyToRequestVote(int SenderId, int Term, bool VoteGranted);
-
-      public abstract Task RedirectUserRequest(int LeaderId, object Data);
-
-      protected int AppendEntries(IEnumerable<RaftLogEntry<TDataIn>>? Entries)
+      #region Heartbeat
+      public AppendEntriesReply HandleHeartbeatRequest(AppendEntriesRequest<TDataIn> request)
       {
-         if (Entries is null) return commitIndex; // or appened idk
+         // TODO logic
+         return new AppendEntriesReply(CurrentTerm, true);
+      }
+
+      private Task<AppendEntriesReply> SendHeartbeat(int receiverId, AppendEntriesRequest<TDataIn> request)
+      {
+         return mediator.SendHeartbeat(receiverId, request);
+      }
+
+      private void HandleHeartbeatReply(AppendEntriesReply reply)
+      {
+         CorrectTerm(reply.Term);
+      }
+      #endregion
+
+      #region AppendEntries
+      public AppendEntriesReply HandleAppendEntriesRequest(AppendEntriesRequest<TDataIn> request)
+      {
+         HeartbeatRecieved = true;
+
+         #region Term correction
+         if (request.Term < CurrentTerm)
+         {
+            return new AppendEntriesReply(CurrentTerm, false);
+         }
+         CorrectTerm(request.Term);
+         #endregion
+
+         CorrectLeader(request.LeaderId);
+
+         #region Previous log entry discovery
+         RaftLogEntry<TDataIn>? prevEntry = log[request.PrevLogId];
+         if (prevEntry is null || prevEntry.Term != request.PrevLogTerm)
+         {
+            return new AppendEntriesReply(CurrentTerm, false);
+         }
+         #endregion
+
+         int lastNewEntryId = AppendEntries(request.Entries);
+
+         if (request.LeaderId > commitIndex)
+         {
+            commitIndex = Math.Min(request.LeaderCommitId, lastNewEntryId);
+         }
+
+         ApplyCommited();
+
+         return new AppendEntriesReply(CurrentTerm, true);
+      }
+
+      private Task<AppendEntriesReply> SendAppendEntries(int receiverId, AppendEntriesRequest<TDataIn> request)
+      {
+         return mediator.SendAppendEntries(receiverId, request);
+      }
+
+      private void HandleAppendEntriesReply(AppendEntriesReply reply)
+      {
+         // TODO logic
+      }
+
+      private int AppendEntries(IList<RaftLogEntry<TDataIn>> Entries)
+      {
+         if (!Entries.Any()) return commitIndex; // or appened idk
 
          foreach (RaftLogEntry<TDataIn> entry in Entries)
          {
@@ -116,48 +171,84 @@ namespace RafRaft.Domain
 
          return commitIndex;
       }
+      #endregion
 
-      public void StartUp()
+      #region RequestVote
+      public VoteReply HandleRequestVoteRequest(VoteRequest request)
+      {
+         if (request.Term < CurrentTerm)
+         {
+            return new VoteReply(CurrentTerm, false);
+         }
+         CorrectTerm(request.Term);
+
+         if (CanGrantVote(request.CandidateId) && IsNewLogBetter(request.LastLogId, request.LastLogTerm))
+         {
+            VotedFor = request.CandidateId;
+            return new VoteReply(CurrentTerm, true);
+         }
+
+         return new VoteReply(CurrentTerm, false);
+      }
+
+      private Task<VoteReply> SendRequestVote(int receiverId, VoteRequest request)
+      {
+         return mediator.SendRequestVote(receiverId, request);
+      }
+
+      private void HandleRequestVoteReply(VoteReply reply)
+      {
+         CorrectTerm(reply.Term);
+         if (nodeState == State.Candidate && reply.VoteGranted) votesGot++;
+      }
+      #endregion
+
+      #region UserRequest
+      /* private async Task HandleUserSetRequest(TDataIn userRequest)
+      {
+         // TODO: batch SendAppendEntries call
+         if (nodeState == State.Follower)
+         {
+            // TODO redirect
+         }
+         if (nodeState == State.Candidate)
+         {
+            // TODO
+            await Task.CompletedTask;
+         }
+
+         commitIndex++;
+         RaftLogEntry<TDataIn> entry = CreateLogEntry(userRequest);
+         log.Add(entry);
+
+         RaftLogEntry<TDataIn> prevLog = log[^1];
+         AppendEntriesRequest<TDataIn> request = new AppendEntriesRequest<TDataIn>(CurrentTerm, id, prevLog.Index, prevLog.Term, [entry], commitIndex);
+         List<Task> taskList = [];
+         foreach (int followerId in nodeIds)
+         {
+            var sendTask = SendAppendEntries(followerId, request);
+            var handleTask = sendTask.ContinueWith((reply) =>
+               HandleAppendEntriesReply(reply.Result));
+
+            taskList.Add(sendTask);
+            taskList.Add(handleTask);
+         }
+
+         await Task.WhenAll(taskList);
+      } */
+
+      private async Task HandleUserGetRequest(string userRequest)
+      {
+         // TODO implement. Probably need an object to communicate with user
+      }
+      #endregion
+
+      private void StartUp()
       {
          electionTimer.Change(0, broadcastTimeout);
       }
 
-      public void HandleAppendEntries(int Term, int LeaderId, int PrevLogIndex,
-        int PrevLogTerm, IEnumerable<RaftLogEntry<TDataIn>>? Entries, int LeaderCommit)
-      {
-         HeartbeatRecieved = true;
-
-         #region Term correction
-         if (Term < CurrentTerm)
-         {
-            ReplyToAppendEntries(LeaderId, CurrentTerm, false);
-         }
-         CorrectTerm(Term);
-         #endregion
-
-         CorrectLeader(LeaderId);
-
-         #region Previous log entry discovery
-         RaftLogEntry<TDataIn>? prevEntry = log[PrevLogIndex];
-         if (prevEntry is null || prevEntry.Term != PrevLogTerm)
-         {
-            ReplyToAppendEntries(LeaderId, CurrentTerm, false);
-         }
-         #endregion
-
-         int lastNewEntryId = AppendEntries(Entries);
-
-         if (LeaderCommit > commitIndex)
-         {
-            commitIndex = Math.Min(LeaderCommit, lastNewEntryId);
-         }
-
-         ApplyCommited();
-
-         ReplyToAppendEntries(LeaderId, CurrentTerm, true);
-      }
-
-      protected async void ApplyCommited()
+      private async void ApplyCommited()
       {
          for (; lastApplied < commitIndex; lastApplied++)
          {
@@ -165,7 +256,7 @@ namespace RafRaft.Domain
          }
       }
 
-      protected void CorrectTerm(int Term)
+      private void CorrectTerm(int Term)
       {
          if (Term > CurrentTerm)
          {
@@ -174,30 +265,11 @@ namespace RafRaft.Domain
          }
       }
 
-      protected void CorrectLeader(int LeaderId)
+      private void CorrectLeader(int LeaderId)
       {
          leaderId = LeaderId;
       }
 
-      public void HandleRequestVote(int Term, int CandidateId,
-        int LastLogIndex, int LastLogTerm)
-      {
-         if (Term < CurrentTerm)
-         {
-            ReplyToRequestVote(CandidateId, CurrentTerm, false);
-         }
-         CorrectTerm(Term);
-
-         if (CanGrantVote(CandidateId) && IsNewLogBetter(LastLogIndex, LastLogTerm))
-         {
-            VotedFor = CandidateId;
-            ReplyToRequestVote(CandidateId, CurrentTerm, true);
-         }
-         else
-         {
-            ReplyToRequestVote(CandidateId, CurrentTerm, false);
-         }
-      }
       private bool CanGrantVote(int CandidateId)
       {
          return VotedFor is null || VotedFor == CandidateId;
@@ -207,15 +279,21 @@ namespace RafRaft.Domain
          return commitTerm <= NewLogTerm && commitIndex <= NewLogIndex;
       }
 
-      protected async void OnBroadcastElapsed(object? Ignored)
+      private async void OnBroadcastElapsed(object? Ignored)
       {
          // Heartbeat
          List<Task> taskList = new List<Task>();
+         AppendEntriesRequest<TDataIn> request;
          foreach (int nodeId in nodeIds)
          {
             // TODO add cancelettion token for downgrading to follower case
-            var requestTask = SendAppendEntries(nodeId, CurrentTerm, id, commitIndex, commitTerm, null, commitIndex);
-            var replyTask = requestTask.ContinueWith((task) => HandleHeartbeatReply(task.Result.Item1, task.Result.Item2));
+            // TODO add failed heartbeat (dead node) handling
+            request = new AppendEntriesRequest<TDataIn>(CurrentTerm, id, commitIndex, commitTerm, [], commitIndex);
+
+            var requestTask = SendHeartbeat(nodeId, request);
+            var replyTask = requestTask.ContinueWith((task) =>
+               HandleHeartbeatReply(task.Result));
+
             taskList.Add(requestTask);
             taskList.Add(replyTask);
          }
@@ -223,24 +301,21 @@ namespace RafRaft.Domain
          await Task.WhenAll(taskList);
       }
 
-      protected void HandleHeartbeatReply(int Term, bool Success)
-      {
-         CorrectTerm(Term);
-      }
-
-      protected async void BeginElection()
+      private async void BeginElection()
       {
          CurrentTerm++;
 
          VotedFor = id;
          votesGot = 1;
 
-         List<Task> taskList = new List<Task>();
+         List<Task> taskList = [];
+         VoteRequest request;
          foreach (int nodeId in nodeIds)
          {
             // TODO add cancelettion token for downgrading case and new election
-            var voteTask = SendRequestVote(nodeId, CurrentTerm, id, commitIndex, commitTerm);
-            var replyTask = voteTask.ContinueWith((task) => HandleRequestVoteReply(task.Result.Item1, task.Result.Item2));
+            request = new VoteRequest(CurrentTerm, id, commitIndex, commitTerm);
+            var voteTask = SendRequestVote(nodeId, request);
+            var replyTask = voteTask.ContinueWith((task) => HandleRequestVoteReply(task.Result));
             taskList.Add(voteTask);
             taskList.Add(replyTask);
          }
@@ -252,84 +327,54 @@ namespace RafRaft.Domain
          }
       }
 
-      protected void HandleRequestVoteReply(int Term, bool VoteGranted)
-      {
-         CorrectTerm(Term);
-         if (nodeState == State.Candidate && VoteGranted) votesGot++;
-      }
-
-      protected void OnElectionElapsed(object? Ignored)
+      private void OnElectionElapsed(object? Ignored)
       {
          if (nodeState == State.Leader) return;
 
-         if (!HeartbeatRecieved && !VoteGranted)
+         if (!HeartbeatRecieved && !Voted)
          {
             BecomeCandidate();
             return;
          }
 
-         VoteGranted = false;
+         Voted = false;
          HeartbeatRecieved = false;
       }
 
-      protected void BecomeLeader()
+      private void BecomeLeader()
       {
          broadcastTimer.Change(0, broadcastTimeout);
          //TODO: init next index
          //TODO: init match index
       }
 
-      protected void BecomeCandidate()
+      private void BecomeCandidate()
       {
          DemoteFromLeadership();
          nodeState = State.Leader;
          BeginElection();
       }
 
-      protected void BecomeFollower()
+      private void BecomeFollower()
       {
          DemoteFromLeadership();
          nodeState = State.Follower;
       }
 
-      protected void DemoteFromLeadership()
+      private void DemoteFromLeadership()
       {
          broadcastTimer.Change(Timeout.Infinite, broadcastTimeout); // or both Infinte?
       }
 
-      protected bool VotesAreEnough()
+      private bool VotesAreEnough()
       {
          return votesGot * 2 > ClusterSize;
       }
 
-      protected RaftLogEntry<TDataIn> CreateLogEntry(TDataIn Data)
+      private RaftLogEntry<TDataIn> CreateLogEntry(TDataIn Data)
       {
          return new RaftLogEntry<TDataIn>(commitIndex, CurrentTerm, Data);
       }
 
-      protected void HandleUserRequest(TDataIn Data)
-      {
-         // TODO: batch SendAppendEntries call
-         if (nodeState == State.Follower)
-         {
-            RedirectUserRequest(leaderId, Data);
-            return;
-         }
-         if (nodeState == State.Candidate)
-         {
-            // TODO
-            return;
-         }
-
-         commitIndex++;
-         RaftLogEntry<TDataIn> entry = CreateLogEntry(Data);
-         log.Add(entry);
-
-         RaftLogEntry<TDataIn> prevLog = log[^1];
-         foreach (int followerId in nodeIds)
-         {
-            SendAppendEntries(followerId, CurrentTerm, id, prevLog.Index, prevLog.Term, [entry], commitIndex);
-         }
-      }
    }
 }

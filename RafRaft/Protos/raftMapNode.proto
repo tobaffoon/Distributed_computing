@@ -5,36 +5,43 @@ option csharp_namespace = "RafRaft.Protos";
 
 package RafRaft;
 
-service RaftMediator{
-    rpc Heartbeat(AppendEntriesRequest) returns (AppendEntriesReply);
-    rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesReply);
-    rpc RequestVote(VoteRequest) returns (VoteReply);
+service RaftMapNode {
+    rpc Heartbeat(AppendMapEntriesRequest) returns (AppendMapEntriesReply);
+    rpc AppendEntries(AppendMapEntriesRequest) returns (AppendMapEntriesReply);
+    rpc RequestVote(VoteMapRequest) returns (VoteMapReply);
 }
 
-message AppendEntriesRequest{
+message AppendMapEntriesRequest {
     int32 term = 1;
     int32 leaderId = 2;
     int32 prevLogId = 3;
     int32 prevLogTerm = 4;
-    map<string, Data> entries = 5;
-    int32 leaderCommitId = 8;
+    repeated LogMapEntry entries = 5;
+    int32 leaderCommitId = 6;
 }
 
-message AppendEntriesReply{
+message AppendMapEntriesReply {
     int32 term = 1;
     bool success = 2;
 }
 
-message VoteRequest{
+message VoteMapRequest {
     int32 term = 1;
     int32 candidateId = 2;
     int32 lastLogId = 3;
     int32 lastLogTerm = 4;
 }
 
-message VoteReply{
+message VoteMapReply {
     int32 term = 1;
     bool voteGranted = 2;
+}
+
+message LogMapEntry {
+   int32 term = 1;
+   int32 index = 2;
+   string key = 3;
+   Data value = 4;
 }
 
 message Data {
