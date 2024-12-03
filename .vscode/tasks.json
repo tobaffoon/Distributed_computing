@@ -1,0 +1,113 @@
+{
+   "version": "2.0.0",
+   "tasks": [
+      {
+         "label": "build",
+         "command": "dotnet",
+         "type": "process",
+         "args": [
+            "build",
+            "${workspaceFolder}/RafRaft.sln",
+            "/property:GenerateFullPaths=true",
+            "/consoleloggerparameters:NoSummary;ForceNoAlign"
+         ],
+         "problemMatcher": "$msCompile"
+      },
+      {
+         "label": "publish",
+         "command": "dotnet",
+         "type": "process",
+         "args": [
+            "publish",
+            "${workspaceFolder}/RafRaft.sln",
+            "/property:GenerateFullPaths=true",
+            "/consoleloggerparameters:NoSummary;ForceNoAlign"
+         ],
+         "problemMatcher": "$msCompile"
+      },
+      {
+         "label": "watch",
+         "command": "dotnet",
+         "type": "process",
+         "args": [
+            "watch",
+            "run",
+            "--project",
+            "${workspaceFolder}/RafRaft.sln"
+         ],
+         "problemMatcher": "$msCompile"
+      },
+      {
+         "label": "runNode0",
+         "command": "dotnet",
+         "type": "process",
+         "args": [
+            "run",
+            "--project",
+            "${workspaceFolder}/RafRaft/RafRaft.csproj",
+            "${workspaceFolder}/RafRaft/DemoConfigs/nodeConfig0.json",
+         ],
+         "problemMatcher": "$msCompile"
+      },
+      {
+         "label": "runNode1",
+         "command": "dotnet",
+         "type": "process",
+         "args": [
+            "run",
+            "--project",
+            "${workspaceFolder}/RafRaft/RafRaft.csproj",
+            "${workspaceFolder}/RafRaft/DemoConfigs/nodeConfig1.json",
+         ],
+         "problemMatcher": "$msCompile"
+      },
+      {
+         "label": "runNode2",
+         "command": "dotnet",
+         "type": "process",
+         "args": [
+            "run",
+            "--project",
+            "${workspaceFolder}/RafRaft/RafRaft.csproj",
+            "${workspaceFolder}/RafRaft/DemoConfigs/nodeConfig2.json",
+         ],
+         "problemMatcher": "$msCompile"
+      },
+      {
+         "label": "runNode3",
+         "command": "dotnet",
+         "type": "process",
+         "args": [
+            "run",
+            "--project",
+            "${workspaceFolder}/RafRaft/RafRaft.csproj",
+            "${workspaceFolder}/RafRaft/DemoConfigs/nodeConfig3.json",
+         ],
+         "problemMatcher": "$msCompile"
+      },
+      {
+         "label": "runNode4",
+         "command": "dotnet",
+         "type": "process",
+         "args": [
+            "run",
+            "--project",
+            "${workspaceFolder}/RafRaft/RafRaft.csproj",
+            "${workspaceFolder}/RafRaft/DemoConfigs/nodeConfig4.json",
+         ],
+         "problemMatcher": "$msCompile"
+      },
+      {
+         "label": "runNode5",
+         "command": "dotnet",
+         "type": "process",
+         "args": [
+            "run",
+            "--project",
+            "${workspaceFolder}/RafRaft/RafRaft.csproj",
+            "${workspaceFolder}/RafRaft/DemoConfigs/nodeConfig5.json",
+         ],
+         "problemMatcher": "$msCompile"
+      }
+   ]
+}

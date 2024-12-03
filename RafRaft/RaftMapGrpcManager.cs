@@ -9,17 +9,17 @@ namespace RafRaft
    public class RaftMapGrpcManager
    {
       private readonly WebApplication _app;
-      private readonly IPEndPoint _endPoint;
-      public RaftMapGrpcManager(int port, RaftNodeConfig nodeConfig, IDictionary<int, IPEndPoint> clientsConfig)
+      private readonly string _address;
+      public RaftMapGrpcManager(int port, RaftNodeConfig nodeConfig, IDictionary<int, string> clientsConfig)
       {
          var builder = WebApplication.CreateBuilder();
 
          // Create server
-         _endPoint = new IPEndPoint(IPAddress.Loopback, port);
+         _address = $"http://localhost:{port}";
          builder.Services.AddGrpc();
          builder.WebHost.ConfigureKestrel(options =>
             {
-               options.Listen(_endPoint, configure =>
+               options.Listen(new IPEndPoint(IPAddress.Loopback, port), configure =>
                   {
                      configure.Protocols = HttpProtocols.Http2;
                   });
@@ -34,8 +34,7 @@ namespace RafRaft
                continue;
             }
 
-            Uri clientUri = new UriBuilder("http", node.Value.Address.ToString(), node.Value.Port).Uri;
-            GrpcChannel channel = GrpcChannel.ForAddress(clientUri);
+            GrpcChannel channel = GrpcChannel.ForAddress(_address);
             clients[node.Key] = new RaftMapNode.RaftMapNodeClient(channel);
          }
 
@@ -58,7 +57,6 @@ namespace RafRaft
       {
          Configure();
          Task serverTask = _app.RunAsync();
-         _app.Logger.LogInformation("Server {endPoint} started", _endPoint);
          return serverTask;
       }
 
