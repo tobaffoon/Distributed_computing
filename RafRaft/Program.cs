@@ -1,8 +1,8 @@
-using System.Net;
-using RafRaft.Domain;
-
 namespace RafRaft
 {
+   using System.Net;
+   using RafRaft.Domain;
+
    class Program
    {
       static async Task Main(string[] args)
@@ -15,8 +15,9 @@ namespace RafRaft
          {
             clientsConfig[ids[i]] = new IPEndPoint(IPAddress.Loopback, ports[i]);
          }
+
          RaftNodeConfig nodeConfig = new RaftNodeConfig(ids[0], 1000, 100, ids);
-         RaftMapGrpcServer server = new RaftMapGrpcServer(ports[0], nodeConfig, clientsConfig);
+         RaftMapGrpcManager server = new RaftMapGrpcManager(ports[0], nodeConfig, clientsConfig);
          await server.Start();
       }
    }

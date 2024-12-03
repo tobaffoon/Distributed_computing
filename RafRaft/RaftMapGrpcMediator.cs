@@ -1,25 +1,28 @@
 namespace RafRaft
 {
    using RafRaft.Protos;
-   using System.Collections.ObjectModel;
    using System.Threading.Tasks;
    using RafRaft.Domain.Messages;
 
    using MapClient = Protos.RaftMapNode.RaftMapNodeClient;
-   using LogEntry = Domain.RaftLogEntry<KeyValuePair<string, Protos.Data>>;
 
    public class RaftMapGrpcMediator : RaftGrpcMediator<KeyValuePair<string, Data>, MapClient>
    {
-      private ReadOnlyDictionary<int, MapClient> _clients;
-      public ReadOnlyDictionary<int, MapClient> Clients { get => _clients; }
+      private readonly IReadOnlyDictionary<int, MapClient> _clients;
+      public IReadOnlyDictionary<int, MapClient> Clients { get => _clients; }
 
-      public RaftMapGrpcMediator(IDictionary<int, MapClient> clients)
+      private readonly ILogger<RaftMapGrpcMediator> _logger;
+
+      public RaftMapGrpcMediator(IDictionary<int, MapClient> clients, ILogger<RaftMapGrpcMediator> logger)
       {
-         _clients = new ReadOnlyDictionary<int, MapClient>(clients);
+         _clients = new Dictionary<int, MapClient>(clients);
+         _logger = logger;
       }
 
       public async Task<AppendEntriesReply> SendAppendEntries(int receiverId, AppendEntriesRequest<KeyValuePair<string, Data>> request)
       {
+         _logger.LogInformation("Send AppendEntries request to {id}", receiverId);
+
          AppendMapEntriesRequest grpcRequest = request.ConvertToGrpc();
          AppendMapEntriesReply grpcReply = await Clients[receiverId].AppendEntriesAsync(grpcRequest);
          AppendEntriesReply reply = grpcReply.ConvertFromGrpc();
@@ -28,6 +31,8 @@ namespace RafRaft
 
       public async Task<AppendEntriesReply> SendHeartbeat(int receiverId, AppendEntriesRequest<KeyValuePair<string, Data>> request)
       {
+         _logger.LogInformation("Send Heartbeat request to {id}", receiverId);
+
          AppendMapEntriesRequest grpcRequest = request.ConvertToGrpc();
          AppendMapEntriesReply grpcReply = await Clients[receiverId].HeartbeatAsync(grpcRequest);
          AppendEntriesReply reply = grpcReply.ConvertFromGrpc();
@@ -36,12 +41,12 @@ namespace RafRaft
 
       public async Task<VoteReply> SendRequestVote(int receiverId, VoteRequest request)
       {
+         _logger.LogInformation("Send RequestVote request to {id}", receiverId);
+
          VoteMapRequest grpcRequest = request.ConvertToGrpc();
          VoteMapReply grpcReply = await Clients[receiverId].RequestVoteAsync(grpcRequest);
          VoteReply reply = grpcReply.ConvertFromGrpc();
          return reply;
       }
-
-
    }
 }

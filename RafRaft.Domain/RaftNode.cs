@@ -243,7 +243,7 @@ namespace RafRaft.Domain
       }
       #endregion
 
-      private void StartUp()
+      public void StartUp()
       {
          electionTimer.Change(0, broadcastTimeout);
       }

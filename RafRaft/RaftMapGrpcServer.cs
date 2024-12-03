@@ -1,53 +1,46 @@
 namespace RafRaft
 {
-   using System.Net;
-   using Grpc.Net.Client;
-   using Microsoft.AspNetCore.Server.Kestrel.Core;
+   using Grpc.Core;
    using RafRaft.Domain;
    using RafRaft.Protos;
 
-   public class RaftMapGrpcServer
+   using MapClient = Protos.RaftMapNode.RaftMapNodeClient;
+   using Pair = KeyValuePair<string, Protos.Data>;
+   using RaftNode = Domain.RaftNode<RaftMap.RaftMapStateMachine<Protos.Data>, KeyValuePair<string, Protos.Data>, Protos.Data>;
+
+   public class RaftMapGrpcServer : RaftMapNode.RaftMapNodeBase
    {
-      private readonly WebApplication _app;
-      private readonly IPEndPoint _endPoint;
-      public RaftMapGrpcServer(int port, RaftNodeConfig nodeConfig, IDictionary<int, IPEndPoint> clientsConfig)
+      private readonly RaftNode _node;
+      private readonly ILogger<RaftMapGrpcServer> _logger;
+
+      public RaftMapGrpcServer(RaftMapGrpcMediator mediator, RaftNodeConfig config, ILogger<RaftMapGrpcServer> logger)
       {
-         var builder = WebApplication.CreateBuilder();
+         _logger = logger;
+         _node = new RaftNode(config, mediator);
+         _node.StartUp();
 
-         // Create server
-         _endPoint = new IPEndPoint(IPAddress.Loopback, port);
-         builder.Services.AddGrpc();
-         builder.WebHost.ConfigureKestrel(options =>
-            {
-               options.Listen(_endPoint, configure =>
-                  {
-                     configure.Protocols = HttpProtocols.Http2;
-                  });
-            });
-
-         // Create clients
-         Dictionary<int, RaftMapNode.RaftMapNodeClient> clients = [];
-         foreach (var node in clientsConfig)
-         {
-            if (node.Key == nodeConfig.Id)
-            {
-               continue;
-            }
-
-            Uri clientUri = new UriBuilder("http", node.Value.Address.ToString(), node.Value.Port).Uri;
-            GrpcChannel channel = GrpcChannel.ForAddress(clientUri);
-            clients[node.Key] = new RaftMapNode.RaftMapNodeClient(channel);
-         }
-
-         _app = builder.Build();
-         _app.MapGrpcService<RaftMapGrpcService>();
+         _logger.LogInformation("Start {id} node", config.Id);
       }
 
-      public Task Start()
+      public override Task<AppendMapEntriesReply> Heartbeat(AppendMapEntriesRequest request, ServerCallContext context)
       {
-         Task serverTask = _app.RunAsync();
-         _app.Logger.LogInformation("Server {endPoint} started", _endPoint);
-         return serverTask;
+         _logger.LogInformation("Received Heartbeat request from {id}", request.LeaderId);
+         var reply = _node.HandleHeartbeatRequest(request.ConvertFromGrpc());
+         return Task.FromResult(reply.ConvertToGrpc());
+      }
+
+      public override Task<AppendMapEntriesReply> AppendEntries(AppendMapEntriesRequest request, ServerCallContext context)
+      {
+         _logger.LogInformation("Received AppendEntries request from {id}", request.LeaderId);
+         var reply = _node.HandleAppendEntriesRequest(request.ConvertFromGrpc());
+         return Task.FromResult(reply.ConvertToGrpc());
+      }
+
+      public override Task<VoteMapReply> RequestVote(VoteMapRequest request, ServerCallContext context)
+      {
+         _logger.LogInformation("Received RequestVote request from {id}", request.CandidateId);
+         var reply = _node.HandleRequestVoteRequest(request.ConvertFromGrpc());
+         return Task.FromResult(reply.ConvertToGrpc());
       }
    }
 }
