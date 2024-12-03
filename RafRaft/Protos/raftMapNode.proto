@@ -1,5 +1,6 @@
 syntax = "proto3";
 import "google/protobuf/struct.proto";
+import "google/protobuf/empty.proto";
 
 option csharp_namespace = "RafRaft.Protos";
 
@@ -9,6 +10,7 @@ service RaftMapNode {
     rpc Heartbeat(AppendMapEntriesRequest) returns (AppendMapEntriesReply);
     rpc AppendEntries(AppendMapEntriesRequest) returns (AppendMapEntriesReply);
     rpc RequestVote(VoteMapRequest) returns (VoteMapReply);
+    rpc TestConnection(google.protobuf.Empty) returns (google.protobuf.Empty);
 }
 
 message AppendMapEntriesRequest {

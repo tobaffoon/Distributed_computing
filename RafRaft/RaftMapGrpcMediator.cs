@@ -5,17 +5,20 @@ namespace RafRaft
    using RafRaft.Domain.Messages;
 
    using MapClient = Protos.RaftMapNode.RaftMapNodeClient;
+   using RafRaft.Domain;
 
    public class RaftMapGrpcMediator : RaftGrpcMediator<KeyValuePair<string, Data>, MapClient>
    {
       private readonly IReadOnlyDictionary<int, MapClient> _clients;
       public IReadOnlyDictionary<int, MapClient> Clients { get => _clients; }
 
+      private readonly int _id;
       private readonly ILogger<RaftMapGrpcMediator> _logger;
 
-      public RaftMapGrpcMediator(IDictionary<int, MapClient> clients, ILogger<RaftMapGrpcMediator> logger)
+      public RaftMapGrpcMediator(IDictionary<int, MapClient> clients, RaftNodeConfig nodeConfig, ILogger<RaftMapGrpcMediator> logger)
       {
          _clients = new Dictionary<int, MapClient>(clients);
+         _id = nodeConfig.Id;
          _logger = logger;
       }
 

@@ -16,27 +16,13 @@ namespace RafRaft
          builder.Configuration
              .AddJsonFile(args[0], optional: false, reloadOnChange: false);
 
-         var id = builder.Configuration.GetValue<int>("Id");
-         var port = builder.Configuration.GetValue<int>("Port");
-         var peers = builder.Configuration.GetSection("Peers").Get<RaftGrpcNodeOptions[]>();
+         int id = builder.Configuration.GetValue<int>("Id");
+         int port = builder.Configuration.GetValue<int>("Port");
+         RaftGrpcNodeOptions[] nodes = builder.Configuration.GetSection("Peers").Get<RaftGrpcNodeOptions[]>()!;
 
-         System.Console.WriteLine($"{id}, {port}");
-         foreach (RaftGrpcNodeOptions node in peers)
-         {
-            System.Console.WriteLine($"{node.Id}, {node.Address}");
-         }
-         // List<int> ports = [5021, 5022, 5023, 5024, 5025];
-         // List<int> ids = [0, 1, 2, 3, 4];
-
-         // Dictionary<int, IPEndPoint> clientsConfig = [];
-         // for (int i = 0; i < ports.Count; i++)
-         // {
-         //    clientsConfig[ids[i]] = new IPEndPoint(IPAddress.Loopback, ports[i]);
-         // }
-
-         // RaftNodeConfig nodeConfig = new RaftNodeConfig(ids[0], 1000, 100, ids);
-         // RaftMapGrpcManager server = new RaftMapGrpcManager(ports[0], nodeConfig, clientsConfig);
-         // await server.Start();
+         RaftNodeConfig nodeConfig = new RaftNodeConfig(id, 100, 1000, nodes.Select(grpcOptions => grpcOptions.Id).ToList());
+         RaftMapGrpcManager server = new RaftMapGrpcManager(port, nodeConfig, nodes);
+         await server.Start();
       }
    }
 }

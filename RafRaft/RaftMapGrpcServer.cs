@@ -7,6 +7,7 @@ namespace RafRaft
    using MapClient = Protos.RaftMapNode.RaftMapNodeClient;
    using Pair = KeyValuePair<string, Protos.Data>;
    using RaftNode = Domain.RaftNode<RaftMap.RaftMapStateMachine<Protos.Data>, KeyValuePair<string, Protos.Data>, Protos.Data>;
+   using Empty = Google.Protobuf.WellKnownTypes.Empty;
 
    public class RaftMapGrpcServer : RaftMapNode.RaftMapNodeBase
    {
@@ -17,9 +18,12 @@ namespace RafRaft
       {
          _logger = logger;
          _node = new RaftNode(config, mediator);
-         _node.StartUp();
+      }
 
-         _logger.LogInformation("Start {id} node", config.Id);
+      public void Start()
+      {
+         _node.StartUp();
+         _logger.LogInformation("Start node #{id}", _node.id);
       }
 
       public override Task<AppendMapEntriesReply> Heartbeat(AppendMapEntriesRequest request, ServerCallContext context)
@@ -41,6 +45,11 @@ namespace RafRaft
          _logger.LogInformation("Received RequestVote request from {id}", request.CandidateId);
          var reply = _node.HandleRequestVoteRequest(request.ConvertFromGrpc());
          return Task.FromResult(reply.ConvertToGrpc());
+      }
+
+      public override Task<Empty> TestConnection(Empty e, ServerCallContext context)
+      {
+         return Task.FromResult(e);
       }
    }
 }

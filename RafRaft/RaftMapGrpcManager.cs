@@ -1,6 +1,7 @@
 namespace RafRaft
 {
    using System.Net;
+   using Grpc.Core;
    using Grpc.Net.Client;
    using Microsoft.AspNetCore.Server.Kestrel.Core;
    using RafRaft.Domain;
@@ -9,13 +10,18 @@ namespace RafRaft
    public class RaftMapGrpcManager
    {
       private readonly WebApplication _app;
-      private readonly string _address;
-      public RaftMapGrpcManager(int port, RaftNodeConfig nodeConfig, IDictionary<int, string> clientsConfig)
+      private readonly RaftGrpcNodeOptions _options;
+      private readonly Dictionary<int, string> _clientsAddresses;
+      public RaftMapGrpcManager(int port, RaftNodeConfig nodeConfig, RaftGrpcNodeOptions[] clientsConfig)
       {
          var builder = WebApplication.CreateBuilder();
 
          // Create server
-         _address = $"http://localhost:{port}";
+         _options = new RaftGrpcNodeOptions()
+         {
+            Id = nodeConfig.Id,
+            Address = $"http://localhost:{port}"
+         };
          builder.Services.AddGrpc();
          builder.WebHost.ConfigureKestrel(options =>
             {
@@ -27,22 +33,21 @@ namespace RafRaft
 
          // Create clients
          Dictionary<int, RaftMapNode.RaftMapNodeClient> clients = [];
+         _clientsAddresses = [];
          foreach (var node in clientsConfig)
          {
-            if (node.Key == nodeConfig.Id)
+            if (node.Id == nodeConfig.Id)
             {
                continue;
             }
 
-            GrpcChannel channel = GrpcChannel.ForAddress(_address);
-            clients[node.Key] = new RaftMapNode.RaftMapNodeClient(channel);
+            GrpcChannel channel = GrpcChannel.ForAddress(node.Address);
+            clients[node.Id] = new RaftMapNode.RaftMapNodeClient(channel);
+            _clientsAddresses[node.Id] = node.Address;
          }
 
-         builder.Host.ConfigureLogging(logging =>
-            {
-               logging.ClearProviders();
-               logging.AddConsole();
-            });
+         builder.Logging.ClearProviders();
+         builder.Logging.AddConsole();
 
          builder.Services.AddSingleton<IDictionary<int, RaftMapNode.RaftMapNodeClient>>(clients);
          builder.Services.AddSingleton<RaftMapGrpcMediator>();
@@ -55,14 +60,54 @@ namespace RafRaft
 
       public Task Start()
       {
-         Configure();
          Task serverTask = _app.RunAsync();
+         LaunchClients();
+         var server = _app.Services.GetService<RaftMapGrpcServer>();
+         server.Start();
          return serverTask;
       }
 
-      private void Configure()
+      private void LaunchClients()
       {
-         _app.Services.GetService<RaftMapGrpcServer>();
+         var clients = _app.Services.GetService<IDictionary<int, RaftMapNode.RaftMapNodeClient>>();
+         ConnectToClients(clients);
+      }
+
+      private void ConnectToClients(IDictionary<int, RaftMapNode.RaftMapNodeClient> clients)
+      {
+         List<Task> connectionTasks = [];
+         foreach (var nodeAddress in _clientsAddresses)
+         {
+            Task connectionTask = Task.Run(() => TryConnectToClient(nodeAddress.Key, clients[nodeAddress.Key]));
+            connectionTasks.Add(connectionTask);
+         }
+         Task.WaitAll(connectionTasks);
+      }
+
+      private async Task TryConnectToClient(int id, RaftMapNode.RaftMapNodeClient client)
+      {
+         // TODO move magic numbers to configuration
+         for (int i = 1; i <= 5; i++)
+         {
+            try
+            {
+               await client.TestConnectionAsync(new Google.Protobuf.WellKnownTypes.Empty());
+               return;
+            }
+            catch (RpcException)
+            {
+               _app.Logger.LogWarning(@"""Failed to connect to node #{id} at {address}. 
+Attempt {i}. Retrying...""",
+                  id,
+                  _clientsAddresses[id],
+                  i
+               );
+
+               Thread.Sleep(5000);
+            }
+         }
+
+         throw new TimeoutException($"Couldn't connect to node #{id} at {_clientsAddresses[id]}");
       }
    }
 }
