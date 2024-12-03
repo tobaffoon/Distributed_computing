@@ -1,39 +1,53 @@
 namespace RafRaft
 {
-   using Grpc.Core;
+   using System.Net;
+   using Grpc.Net.Client;
+   using Microsoft.AspNetCore.Server.Kestrel.Core;
    using RafRaft.Domain;
    using RafRaft.Protos;
 
-   using MapClient = Protos.RaftMapNode.RaftMapNodeClient;
-   using Pair = KeyValuePair<string, Protos.Data>;
-   using RaftNode = Domain.RaftNode<RaftMap.RaftMapStateMachine<Protos.Data>, KeyValuePair<string, Protos.Data>, Protos.Data>;
-
-   public class RaftMapGrpcServer : RaftMapNode.RaftMapNodeBase
+   public class RaftMapGrpcServer
    {
-      private readonly RaftNode _node;
-
-      public RaftMapGrpcServer(IDictionary<int, MapClient> clients, int Id, long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds)
+      private readonly WebApplication _app;
+      private readonly IPEndPoint _endPoint;
+      public RaftMapGrpcServer(int port, RaftNodeConfig nodeConfig, IDictionary<int, IPEndPoint> clientsConfig)
       {
-         RaftMapGrpcMediator mediator = new RaftMapGrpcMediator(clients);
-         _node = new RaftNode(Id, BroadcastTime, ElectionTimeout, NodeIds, mediator);
+         var builder = WebApplication.CreateBuilder();
+
+         // Create server
+         _endPoint = new IPEndPoint(IPAddress.Loopback, port);
+         builder.Services.AddGrpc();
+         builder.WebHost.ConfigureKestrel(options =>
+            {
+               options.Listen(_endPoint, configure =>
+                  {
+                     configure.Protocols = HttpProtocols.Http2;
+                  });
+            });
+
+         // Create clients
+         Dictionary<int, RaftMapNode.RaftMapNodeClient> clients = [];
+         foreach (var node in clientsConfig)
+         {
+            if (node.Key == nodeConfig.Id)
+            {
+               continue;
+            }
+
+            Uri clientUri = new UriBuilder("http", node.Value.Address.ToString(), node.Value.Port).Uri;
+            GrpcChannel channel = GrpcChannel.ForAddress(clientUri);
+            clients[node.Key] = new RaftMapNode.RaftMapNodeClient(channel);
+         }
+
+         _app = builder.Build();
+         _app.MapGrpcService<RaftMapGrpcService>();
       }
 
-      public override Task<AppendMapEntriesReply> Heartbeat(AppendMapEntriesRequest request, ServerCallContext context)
+      public Task Start()
       {
-         var reply = _node.HandleHeartbeatRequest(request.ConvertFromGrpc());
-         return Task.FromResult(reply.ConvertToGrpc());
-      }
-
-      public override Task<AppendMapEntriesReply> AppendEntries(AppendMapEntriesRequest request, ServerCallContext context)
-      {
-         var reply = _node.HandleAppendEntriesRequest(request.ConvertFromGrpc());
-         return Task.FromResult(reply.ConvertToGrpc());
-      }
-
-      public override Task<VoteMapReply> RequestVote(VoteMapRequest request, ServerCallContext context)
-      {
-         var reply = _node.HandleRequestVoteRequest(request.ConvertFromGrpc());
-         return Task.FromResult(reply.ConvertToGrpc());
+         Task serverTask = _app.RunAsync();
+         _app.Logger.LogInformation("Server {endPoint} started", _endPoint);
+         return serverTask;
       }
    }
 }

@@ -1,3 +1,6 @@
+using System.Net;
+using RafRaft.Domain;
+
 namespace RafRaft
 {
    class Program
@@ -5,10 +8,16 @@ namespace RafRaft
       static async Task Main(string[] args)
       {
          List<int> ports = [5021, 5022, 5023, 5024, 5025];
-         foreach (int port in ports)
+         List<int> ids = [0, 1, 2, 3, 4];
+
+         Dictionary<int, IPEndPoint> clientsConfig = [];
+         for (int i = 0; i < ports.Count; i++)
          {
-            // new RaftGrpcNode<int>(new IPEndPoint(IPAddress.Loopback, port), 10, 10, ports);
+            clientsConfig[ids[i]] = new IPEndPoint(IPAddress.Loopback, ports[i]);
          }
+         RaftNodeConfig nodeConfig = new RaftNodeConfig(ids[0], 1000, 100, ids);
+         RaftMapGrpcServer server = new RaftMapGrpcServer(ports[0], nodeConfig, clientsConfig);
+         await server.Start();
       }
    }
 }

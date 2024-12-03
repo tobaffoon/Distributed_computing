@@ -72,19 +72,19 @@ namespace RafRaft.Domain
          }
       }
 
-      public RaftNode(int Id, long BroadcastTime, long ElectionTimeout, IEnumerable<int> NodeIds, IRaftMediator<TDataIn> mediator)
+      public RaftNode(RaftNodeConfig config, IRaftMediator<TDataIn> mediator)
       {
-         broadcastTimeout = BroadcastTime;
-         electionTimeout = ElectionTimeout;
+         broadcastTimeout = config.BroadcastTime;
+         electionTimeout = config.ElectionTimeout;
 
          broadcastTimer = new Timer(OnBroadcastElapsed, null, Timeout.Infinite, broadcastTimeout);
          electionTimer = new Timer(OnElectionElapsed, null, Timeout.Infinite, electionTimeout);
 
          internalState = new TState();
 
-         id = Id;
+         id = config.Id;
 
-         var nodesWithoutThis = NodeIds.Except([id]);
+         var nodesWithoutThis = config.NodeIds.Except([id]);
          nodeIds = new List<int>(nodesWithoutThis);
 
          this.mediator = mediator;
