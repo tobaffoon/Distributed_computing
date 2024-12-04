@@ -78,8 +78,8 @@ namespace RafRaft.Domain
          }
       }
 
-      private CancellationTokenSource _electionCancellation = new CancellationTokenSource();
-      private CancellationTokenSource _appendEntriesCancellation = new CancellationTokenSource();
+      private CancellationTokenSource _currentElectionCancellation = new CancellationTokenSource();
+      private CancellationTokenSource _currentAppendEntriesCancellation = new CancellationTokenSource();
       private ILogger _logger;
 
       public RaftNode(RaftNodeConfig config, IRaftMediator<TDataIn> mediator, ILogger logger)
@@ -305,6 +305,9 @@ namespace RafRaft.Domain
       {
          _logger.LogInformation($"Broadcast timer elapsed");
 
+         _currentAppendEntriesCancellation = new CancellationTokenSource();
+         var savedToken = _currentAppendEntriesCancellation;
+
          // Heartbeat
          List<Task> taskList = [];
          AppendEntriesRequest<TDataIn> request;
@@ -314,7 +317,7 @@ namespace RafRaft.Domain
             // TODO add failed heartbeat (dead node) handling
             request = new AppendEntriesRequest<TDataIn>(CurrentTerm, id, commitIndex, commitTerm, [], commitIndex);
 
-            var requestTask = SendHeartbeat(nodeId, request, _appendEntriesCancellation.Token);
+            var requestTask = SendHeartbeat(nodeId, request, savedToken.Token);
             var replyTask = requestTask.ContinueWith((task) =>
                HandleHeartbeatReply(task.Result));
 
@@ -325,7 +328,7 @@ namespace RafRaft.Domain
          await Task.WhenAll(taskList);
       }
 
-      private async void BeginElection()
+      private async void BeginElection(CancellationToken cancellationToken)
       {
          CurrentTerm++;
 
@@ -336,18 +339,18 @@ namespace RafRaft.Domain
          VoteRequest request;
          foreach (int nodeId in nodeIds)
          {
-            // TODO add cancelettion token for downgrading case and new election
             request = new VoteRequest(CurrentTerm, id, commitIndex, commitTerm);
-            var voteTask = SendRequestVote(nodeId, request, _electionCancellation.Token);
+            var voteTask = SendRequestVote(nodeId, request, cancellationToken);
             var replyTask = voteTask.ContinueWith((task) => HandleRequestVoteReply(task.Result));
             taskList.Add(voteTask);
             taskList.Add(replyTask);
          }
-         if (_electionCancellation.Token.IsCancellationRequested)
+         if (cancellationToken.IsCancellationRequested)
          {
             return;
          }
          await Task.WhenAll(taskList);
+         _logger.LogInformation("Received all VoteRequest replies from peers");
 
          if (VotesAreEnough())
          {
@@ -359,14 +362,16 @@ namespace RafRaft.Domain
       {
          _logger.LogInformation("Election timer elapsed");
 
-         _electionCancellation.Cancel(); // cancel current election
+         _currentElectionCancellation.Cancel(); // cancel current election
+         _currentElectionCancellation = new CancellationTokenSource();
+         var savedToken = _currentElectionCancellation;
 
          if (nodeState == State.Leader) return;
 
          if (!HeartbeatRecieved && (!Voted || VotedFor == id))
          {
             _logger.LogInformation("Begin election");
-            BecomeCandidate();
+            BecomeCandidate(savedToken.Token);
             return;
          }
 
@@ -383,11 +388,11 @@ namespace RafRaft.Domain
          //TODO: init match index
       }
 
-      private void BecomeCandidate()
+      private void BecomeCandidate(CancellationToken cancellationToken)
       {
          StopBroadcast();
          nodeState = State.Candidate;
-         BeginElection();
+         BeginElection(cancellationToken);
       }
 
       private void BecomeFollower()
@@ -414,7 +419,7 @@ namespace RafRaft.Domain
       private void StopElection()
       {
          _logger.LogInformation("Premature election stop");
-         _electionCancellation.Cancel();
+         _currentElectionCancellation.Cancel();
          nodeState = State.Follower;
       }
 
