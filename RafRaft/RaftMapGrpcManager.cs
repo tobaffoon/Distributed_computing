@@ -4,6 +4,7 @@ namespace RafRaft
    using Grpc.Core;
    using Grpc.Net.Client;
    using Microsoft.AspNetCore.Server.Kestrel.Core;
+   using Microsoft.Extensions.Logging.Configuration;
    using RafRaft.Domain;
    using RafRaft.Protos;
 
@@ -12,6 +13,10 @@ namespace RafRaft
       private readonly WebApplication _app;
       private readonly RaftGrpcNodeOptions _options;
       private readonly Dictionary<int, string> _clientsAddresses;
+      private readonly ILogger _logger;
+      private readonly Dictionary<int, RaftMapNode.RaftMapNodeClient> _clients;
+      private readonly RaftMapGrpcServer _server;
+
       public RaftMapGrpcManager(int port, RaftNodeConfig nodeConfig, RaftGrpcNodeOptions[] clientsConfig)
       {
          var builder = WebApplication.CreateBuilder();
@@ -32,7 +37,7 @@ namespace RafRaft
             });
 
          // Create clients
-         Dictionary<int, RaftMapNode.RaftMapNodeClient> clients = [];
+         _clients = [];
          _clientsAddresses = [];
          foreach (var node in clientsConfig)
          {
@@ -42,17 +47,17 @@ namespace RafRaft
             }
 
             GrpcChannel channel = GrpcChannel.ForAddress(node.Address);
-            clients[node.Id] = new RaftMapNode.RaftMapNodeClient(channel);
+            _clients[node.Id] = new RaftMapNode.RaftMapNodeClient(channel);
             _clientsAddresses[node.Id] = node.Address;
          }
 
          builder.Logging.ClearProviders();
-         builder.Logging.AddConsole();
+         using ILoggerFactory factory = LoggerFactory.Create(builder => builder.AddConsole());
+         _logger = factory.CreateLogger($"RaftNode #{nodeConfig.Id}");
 
-         builder.Services.AddSingleton<IDictionary<int, RaftMapNode.RaftMapNodeClient>>(clients);
-         builder.Services.AddSingleton<RaftMapGrpcMediator>();
-         builder.Services.AddSingleton(nodeConfig);
-         builder.Services.AddSingleton<RaftMapGrpcServer>();
+         RaftMapGrpcMediator clientMediator = new RaftMapGrpcMediator(_clients, nodeConfig, _logger);
+         _server = new RaftMapGrpcServer(clientMediator, nodeConfig, _logger);
+         builder.Services.AddSingleton(_server);
 
          _app = builder.Build();
          _app.MapGrpcService<RaftMapGrpcServer>();
@@ -62,23 +67,21 @@ namespace RafRaft
       {
          Task serverTask = _app.RunAsync();
          LaunchClients();
-         var server = _app.Services.GetService<RaftMapGrpcServer>();
-         server.Start();
+         _server.Start();
          return serverTask;
       }
 
       private void LaunchClients()
       {
-         var clients = _app.Services.GetService<IDictionary<int, RaftMapNode.RaftMapNodeClient>>();
-         ConnectToClients(clients);
+         ConnectToClients();
       }
 
-      private void ConnectToClients(IDictionary<int, RaftMapNode.RaftMapNodeClient> clients)
+      private void ConnectToClients()
       {
          List<Task> connectionTasks = [];
          foreach (var nodeAddress in _clientsAddresses)
          {
-            Task connectionTask = Task.Run(() => TryConnectToClient(nodeAddress.Key, clients[nodeAddress.Key]));
+            Task connectionTask = Task.Run(() => TryConnectToClient(nodeAddress.Key, _clients[nodeAddress.Key]));
             connectionTasks.Add(connectionTask);
          }
          Task.WaitAll(connectionTasks);

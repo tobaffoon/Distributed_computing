@@ -13,9 +13,9 @@ namespace RafRaft
       public IReadOnlyDictionary<int, MapClient> Clients { get => _clients; }
 
       private readonly int _id;
-      private readonly ILogger<RaftMapGrpcMediator> _logger;
+      private readonly ILogger _logger;
 
-      public RaftMapGrpcMediator(IDictionary<int, MapClient> clients, RaftNodeConfig nodeConfig, ILogger<RaftMapGrpcMediator> logger)
+      public RaftMapGrpcMediator(IDictionary<int, MapClient> clients, RaftNodeConfig nodeConfig, ILogger logger)
       {
          _clients = new Dictionary<int, MapClient>(clients);
          _id = nodeConfig.Id;
@@ -40,7 +40,7 @@ namespace RafRaft
          AppendEntriesRequest<KeyValuePair<string, Data>> request,
          CancellationToken token)
       {
-         _logger.LogInformation("Send Heartbeat request to Node #{id}", receiverId);
+         _logger.LogTrace("Send Heartbeat request to Node #{id}", receiverId);
 
          AppendMapEntriesRequest grpcRequest = request.ConvertToGrpc();
          AppendMapEntriesReply grpcReply = await Clients[receiverId].HeartbeatAsync(grpcRequest, cancellationToken: token);

@@ -12,26 +12,22 @@ namespace RafRaft
    public class RaftMapGrpcServer : RaftMapNode.RaftMapNodeBase
    {
       private readonly RaftNode _node;
-      private readonly ILogger<RaftMapGrpcServer> _logger;
+      private readonly ILogger _logger;
 
-      public RaftMapGrpcServer(RaftMapGrpcMediator mediator, RaftNodeConfig config, ILogger<RaftMapGrpcServer> logger)
+      public RaftMapGrpcServer(RaftMapGrpcMediator mediator, RaftNodeConfig config, ILogger logger)
       {
          _logger = logger;
-
-         using ILoggerFactory factory = LoggerFactory.Create(builder => builder.AddConsole());
-         ILogger nodeLogger = factory.CreateLogger($"RaftNode #{config.Id}");
-         _node = new RaftNode(config, mediator, nodeLogger);
+         _node = new RaftNode(config, mediator, _logger);
       }
 
       public void Start()
       {
          _node.StartUp();
-         _logger.LogInformation("Start node #{id}", _node.id);
       }
 
       public override Task<AppendMapEntriesReply> Heartbeat(AppendMapEntriesRequest request, ServerCallContext context)
       {
-         _logger.LogInformation("Received Heartbeat request from Node #{id}", request.LeaderId);
+         _logger.LogTrace("Received Heartbeat request from Node #{id}", request.LeaderId);
          var reply = _node.HandleHeartbeatRequest(request.ConvertFromGrpc());
          return Task.FromResult(reply.ConvertToGrpc());
       }

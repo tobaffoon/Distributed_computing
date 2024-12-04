@@ -5,6 +5,10 @@
       {
          "id": 0,
          "address": "http://localhost:5020"
+      },
+      {
+         "id": 2,
+         "address": "http://localhost:5022"
       }
    ]
 }

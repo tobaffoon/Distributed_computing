@@ -110,7 +110,14 @@ namespace RafRaft.Domain
       #region Heartbeat
       public AppendEntriesReply HandleHeartbeatRequest(AppendEntriesRequest<TDataIn> request)
       {
-         // TODO logic
+         HeartbeatRecieved = true;
+
+         if (nodeState == State.Candidate)
+         {
+            StopElection();
+         }
+         CorrectLeader(request.LeaderId);
+
          return new AppendEntriesReply(CurrentTerm, true);
       }
 
@@ -200,17 +207,25 @@ namespace RafRaft.Domain
       {
          if (request.Term < CurrentTerm)
          {
+            _logger.LogInformation("Vote not granted to {candidateId}, because Term is too low", request.CandidateId);
             return new VoteReply(CurrentTerm, false);
          }
          CorrectTerm(request.Term);
 
-         if (CanGrantVote(request.CandidateId) && IsNewLogBetter(request.LastLogId, request.LastLogTerm))
+         if (Voted)
          {
-            VotedFor = request.CandidateId;
-            return new VoteReply(CurrentTerm, true);
+            _logger.LogInformation("Vote not granted to {candidateId}, because Node alreay voted", request.CandidateId);
+            return new VoteReply(CurrentTerm, false);
+         }
+         if (!IsNewLogBetter(request.LastLogId, request.LastLogTerm))
+         {
+            _logger.LogInformation("Vote not granted to {candidateId}, because its log is worse", request.CandidateId);
+            return new VoteReply(CurrentTerm, false);
          }
 
-         return new VoteReply(CurrentTerm, false);
+         _logger.LogInformation("Vote granted to {candidateId}", request.CandidateId);
+         VotedFor = request.CandidateId;
+         return new VoteReply(CurrentTerm, true);
       }
 
       private Task<VoteReply> SendRequestVote(int receiverId, VoteRequest request, CancellationToken token)
@@ -280,8 +295,9 @@ namespace RafRaft.Domain
 
       private void CorrectTerm(int Term)
       {
-         if (Term > CurrentTerm)
+         if ((nodeState == State.Candidate || nodeState == State.Leader) && Term > CurrentTerm)
          {
+            _logger.LogInformation("Request from node with bigger Term. Becoming follower");
             CurrentTerm = Term;
             BecomeFollower();
          }
@@ -292,10 +308,6 @@ namespace RafRaft.Domain
          leaderId = LeaderId;
       }
 
-      private bool CanGrantVote(int CandidateId)
-      {
-         return VotedFor is null || VotedFor == CandidateId;
-      }
       private bool IsNewLogBetter(int NewLogIndex, int NewLogTerm)
       {
          return commitTerm <= NewLogTerm && commitIndex <= NewLogIndex;
@@ -303,7 +315,7 @@ namespace RafRaft.Domain
 
       private async void OnBroadcastElapsed(object? Ignored)
       {
-         _logger.LogInformation($"Broadcast timer elapsed");
+         _logger.LogTrace($"Broadcast timer elapsed");
 
          _currentAppendEntriesCancellation = new CancellationTokenSource();
          var savedToken = _currentAppendEntriesCancellation;
@@ -360,13 +372,17 @@ namespace RafRaft.Domain
 
       private void OnElectionElapsed(object? Ignored)
       {
-         _logger.LogInformation("Election timer elapsed");
+         _logger.LogTrace("Election timer elapsed");
 
          _currentElectionCancellation.Cancel(); // cancel current election
          _currentElectionCancellation = new CancellationTokenSource();
          var savedToken = _currentElectionCancellation;
 
-         if (nodeState == State.Leader) return;
+         if (nodeState == State.Leader)
+         {
+            _logger.LogTrace("Node is Leader. Election doesn't begin");
+            return;
+         }
 
          if (!HeartbeatRecieved && (!Voted || VotedFor == id))
          {
@@ -375,6 +391,7 @@ namespace RafRaft.Domain
             return;
          }
 
+         _logger.LogTrace("Node has Leader or voted. Election doesn't begin");
          Voted = false;
          HeartbeatRecieved = false;
       }
@@ -397,8 +414,9 @@ namespace RafRaft.Domain
 
       private void BecomeFollower()
       {
-         _logger.LogInformation("Become follower, leader is {id}", leaderId);
+         _logger.LogInformation("New Leader is Node #{id}", leaderId);
          StopBroadcast();
+         _currentElectionCancellation.Cancel();
          nodeState = State.Follower;
       }
 
