@@ -22,32 +22,41 @@ namespace RafRaft
          _logger = logger;
       }
 
-      public async Task<AppendEntriesReply> SendAppendEntries(int receiverId, AppendEntriesRequest<KeyValuePair<string, Data>> request)
+      public async Task<AppendEntriesReply> SendAppendEntries(
+         int receiverId,
+         AppendEntriesRequest<KeyValuePair<string, Data>> request,
+         CancellationToken token)
       {
-         _logger.LogInformation("Send AppendEntries request to {id}", receiverId);
+         _logger.LogInformation("Send AppendEntries request to Node #{id}", receiverId);
 
          AppendMapEntriesRequest grpcRequest = request.ConvertToGrpc();
-         AppendMapEntriesReply grpcReply = await Clients[receiverId].AppendEntriesAsync(grpcRequest);
+         AppendMapEntriesReply grpcReply = await Clients[receiverId].AppendEntriesAsync(grpcRequest, cancellationToken: token);
          AppendEntriesReply reply = grpcReply.ConvertFromGrpc();
          return reply;
       }
 
-      public async Task<AppendEntriesReply> SendHeartbeat(int receiverId, AppendEntriesRequest<KeyValuePair<string, Data>> request)
+      public async Task<AppendEntriesReply> SendHeartbeat(
+         int receiverId,
+         AppendEntriesRequest<KeyValuePair<string, Data>> request,
+         CancellationToken token)
       {
-         _logger.LogInformation("Send Heartbeat request to {id}", receiverId);
+         _logger.LogInformation("Send Heartbeat request to Node #{id}", receiverId);
 
          AppendMapEntriesRequest grpcRequest = request.ConvertToGrpc();
-         AppendMapEntriesReply grpcReply = await Clients[receiverId].HeartbeatAsync(grpcRequest);
+         AppendMapEntriesReply grpcReply = await Clients[receiverId].HeartbeatAsync(grpcRequest, cancellationToken: token);
          AppendEntriesReply reply = grpcReply.ConvertFromGrpc();
          return reply;
       }
 
-      public async Task<VoteReply> SendRequestVote(int receiverId, VoteRequest request)
+      public async Task<VoteReply> SendRequestVote(
+         int receiverId,
+         VoteRequest request,
+         CancellationToken token)
       {
-         _logger.LogInformation("Send RequestVote request to {id}", receiverId);
+         _logger.LogInformation("Send RequestVote request to Node #{id} for Term {term}", receiverId, request.Term);
 
          VoteMapRequest grpcRequest = request.ConvertToGrpc();
-         VoteMapReply grpcReply = await Clients[receiverId].RequestVoteAsync(grpcRequest);
+         VoteMapReply grpcReply = await Clients[receiverId].RequestVoteAsync(grpcRequest, cancellationToken: token);
          VoteReply reply = grpcReply.ConvertFromGrpc();
          return reply;
       }

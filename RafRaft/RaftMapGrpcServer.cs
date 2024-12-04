@@ -17,7 +17,10 @@ namespace RafRaft
       public RaftMapGrpcServer(RaftMapGrpcMediator mediator, RaftNodeConfig config, ILogger<RaftMapGrpcServer> logger)
       {
          _logger = logger;
-         _node = new RaftNode(config, mediator);
+
+         using ILoggerFactory factory = LoggerFactory.Create(builder => builder.AddConsole());
+         ILogger nodeLogger = factory.CreateLogger($"RaftNode #{config.Id}");
+         _node = new RaftNode(config, mediator, nodeLogger);
       }
 
       public void Start()
@@ -28,21 +31,21 @@ namespace RafRaft
 
       public override Task<AppendMapEntriesReply> Heartbeat(AppendMapEntriesRequest request, ServerCallContext context)
       {
-         _logger.LogInformation("Received Heartbeat request from {id}", request.LeaderId);
+         _logger.LogInformation("Received Heartbeat request from Node #{id}", request.LeaderId);
          var reply = _node.HandleHeartbeatRequest(request.ConvertFromGrpc());
          return Task.FromResult(reply.ConvertToGrpc());
       }
 
       public override Task<AppendMapEntriesReply> AppendEntries(AppendMapEntriesRequest request, ServerCallContext context)
       {
-         _logger.LogInformation("Received AppendEntries request from {id}", request.LeaderId);
+         _logger.LogInformation("Received AppendEntries request from Node #{id}", request.LeaderId);
          var reply = _node.HandleAppendEntriesRequest(request.ConvertFromGrpc());
          return Task.FromResult(reply.ConvertToGrpc());
       }
 
       public override Task<VoteMapReply> RequestVote(VoteMapRequest request, ServerCallContext context)
       {
-         _logger.LogInformation("Received RequestVote request from {id}", request.CandidateId);
+         _logger.LogInformation("Received RequestVote request from Node #{id}", request.CandidateId);
          var reply = _node.HandleRequestVoteRequest(request.ConvertFromGrpc());
          return Task.FromResult(reply.ConvertToGrpc());
       }
