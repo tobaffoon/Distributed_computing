@@ -1,3 +1,3 @@
 namespace RafRaft.Domain;
 
-public record class RaftNodeConfig(int Id, long BroadcastTime, long ElectionTimeout, IList<int> NodeIds);
+public record class RaftNodeConfig(int Id, long BroadcastTime, int MinElectionMillis, int MaxElectionMillis, IList<int> PeersIds);

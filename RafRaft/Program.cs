@@ -1,6 +1,5 @@
 namespace RafRaft
 {
-   using System.Net;
    using RafRaft.Domain;
 
    class Program
@@ -20,9 +19,9 @@ namespace RafRaft
          int port = builder.Configuration.GetValue<int>("Port");
          RaftGrpcNodeOptions[] nodes = builder.Configuration.GetSection("Peers").Get<RaftGrpcNodeOptions[]>()!;
 
-         RaftNodeConfig nodeConfig = new RaftNodeConfig(id, 100, 1000, nodes.Select(grpcOptions => grpcOptions.Id).ToList());
-         RaftMapGrpcManager server = new RaftMapGrpcManager(port, nodeConfig, nodes);
-         await server.Start();
+         RaftNodeConfig nodeConfig = new RaftNodeConfig(id, 100, 1000, 1500, nodes.Select(grpcOptions => grpcOptions.Id).ToList());
+         RaftMapGrpcManager manager = new RaftMapGrpcManager(port, nodeConfig, nodes);
+         await manager.Start();
       }
    }
 }

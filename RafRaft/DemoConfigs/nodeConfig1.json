@@ -9,6 +9,18 @@
       {
          "id": 2,
          "address": "http://localhost:5022"
+      },
+      {
+         "id": 3,
+         "address": "http://localhost:5023"
+      },
+      {
+         "id": 4,
+         "address": "http://localhost:5024"
+      },
+      {
+         "id": 5,
+         "address": "http://localhost:5025"
       }
    ]
 }

@@ -13,6 +13,7 @@ namespace RafRaft
    {
       private readonly RaftNode _node;
       private readonly ILogger _logger;
+      private bool _started = false;
 
       public RaftMapGrpcServer(RaftMapGrpcMediator mediator, RaftNodeConfig config, ILogger logger)
       {
@@ -23,31 +24,45 @@ namespace RafRaft
       public void Start()
       {
          _node.StartUp();
+         _started = true;
       }
 
       public override Task<AppendMapEntriesReply> Heartbeat(AppendMapEntriesRequest request, ServerCallContext context)
       {
-         _logger.LogTrace("Received Heartbeat request from Node #{id}", request.LeaderId);
+         if (!_started)
+         {
+            throw new RpcException(new Status(StatusCode.Unavailable, "Server has not started yet"));
+         }
+
          var reply = _node.HandleHeartbeatRequest(request.ConvertFromGrpc());
          return Task.FromResult(reply.ConvertToGrpc());
       }
 
       public override Task<AppendMapEntriesReply> AppendEntries(AppendMapEntriesRequest request, ServerCallContext context)
       {
-         _logger.LogInformation("Received AppendEntries request from Node #{id}", request.LeaderId);
+         if (!_started)
+         {
+            throw new RpcException(new Status(StatusCode.Unavailable, "Server has not started yet"));
+         }
+
          var reply = _node.HandleAppendEntriesRequest(request.ConvertFromGrpc());
          return Task.FromResult(reply.ConvertToGrpc());
       }
 
       public override Task<VoteMapReply> RequestVote(VoteMapRequest request, ServerCallContext context)
       {
-         _logger.LogInformation("Received RequestVote request from Node #{id}", request.CandidateId);
+         if (!_started)
+         {
+            throw new RpcException(new Status(StatusCode.Unavailable, "Server has not started yet"));
+         }
+
          var reply = _node.HandleRequestVoteRequest(request.ConvertFromGrpc());
          return Task.FromResult(reply.ConvertToGrpc());
       }
 
       public override Task<Empty> TestConnection(Empty e, ServerCallContext context)
       {
+         _logger.LogInformation("Received testConnection request from {peer}", context.Peer);
          return Task.FromResult(e);
       }
    }

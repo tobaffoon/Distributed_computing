@@ -52,7 +52,12 @@ namespace RafRaft
          }
 
          builder.Logging.ClearProviders();
-         using ILoggerFactory factory = LoggerFactory.Create(builder => builder.AddConsole());
+         using ILoggerFactory factory = LoggerFactory.Create(builder => builder
+            .AddSimpleConsole(c =>
+               {
+                  c.TimestampFormat = "[HH:mm:ss] ";
+               })
+            .SetMinimumLevel(LogLevel.Information));
          _logger = factory.CreateLogger($"RaftNode #{nodeConfig.Id}");
 
          RaftMapGrpcMediator clientMediator = new RaftMapGrpcMediator(_clients, nodeConfig, _logger);
@@ -65,15 +70,13 @@ namespace RafRaft
 
       public Task Start()
       {
+         _logger.LogInformation("1");
          Task serverTask = _app.RunAsync();
-         LaunchClients();
+         _logger.LogInformation("2");
+         ConnectToClients();
+         _logger.LogInformation("3");
          _server.Start();
          return serverTask;
-      }
-
-      private void LaunchClients()
-      {
-         ConnectToClients();
       }
 
       private void ConnectToClients()
@@ -99,7 +102,7 @@ namespace RafRaft
             }
             catch (RpcException)
             {
-               _app.Logger.LogWarning(@"""Failed to connect to node #{id} at {address}. 
+               _logger.LogWarning(@"""Failed to connect to node #{id} at {address}. 
 Attempt {i}. Retrying...""",
                   id,
                   _clientsAddresses[id],
