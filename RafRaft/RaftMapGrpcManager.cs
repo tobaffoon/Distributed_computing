@@ -10,12 +10,13 @@ namespace RafRaft
 
    public class RaftMapGrpcManager
    {
+      public const int STARTUP_TIME_MS = 5000;
       private readonly WebApplication _app;
       private readonly RaftGrpcNodeOptions _options;
-      private readonly Dictionary<int, string> _clientsAddresses;
       private readonly ILogger _logger;
       private readonly Dictionary<int, RaftMapNode.RaftMapNodeClient> _clients;
       private readonly RaftMapGrpcServer _server;
+      private readonly Dictionary<int, bool> _startupAvailablePeers;
 
       public RaftMapGrpcManager(int port, RaftNodeConfig nodeConfig, RaftGrpcNodeOptions[] clientsConfig)
       {
@@ -38,7 +39,7 @@ namespace RafRaft
 
          // Create clients
          _clients = [];
-         _clientsAddresses = [];
+         _startupAvailablePeers = [];
          foreach (var node in clientsConfig)
          {
             if (node.Id == nodeConfig.Id)
@@ -48,7 +49,8 @@ namespace RafRaft
 
             GrpcChannel channel = GrpcChannel.ForAddress(node.Address);
             _clients[node.Id] = new RaftMapNode.RaftMapNodeClient(channel);
-            _clientsAddresses[node.Id] = node.Address;
+
+            _startupAvailablePeers[node.Id] = true;
          }
 
          builder.Logging.ClearProviders();
@@ -64,56 +66,76 @@ namespace RafRaft
          _server = new RaftMapGrpcServer(clientMediator, nodeConfig, _logger);
          builder.Services.AddSingleton(_server);
 
+
          _app = builder.Build();
          _app.MapGrpcService<RaftMapGrpcServer>();
       }
 
       public Task Start()
       {
-         _logger.LogInformation("1");
          Task serverTask = _app.RunAsync();
-         _logger.LogInformation("2");
+         Thread.Sleep(STARTUP_TIME_MS); // time for sysadmin to launch other nodes
          ConnectToClients();
-         _logger.LogInformation("3");
-         _server.Start();
+         _server.Start(_startupAvailablePeers);
          return serverTask;
       }
 
       private void ConnectToClients()
       {
          List<Task> connectionTasks = [];
-         foreach (var nodeAddress in _clientsAddresses)
+         foreach (var nodeConfig in _clients)
          {
-            Task connectionTask = Task.Run(() => TryConnectToClient(nodeAddress.Key, _clients[nodeAddress.Key]));
+            Task<bool> connectionTask = Task.Run(() => TryConnectToClient(nodeConfig.Key, nodeConfig.Value));
+            Task markInactiveTask = connectionTask.ContinueWith(task =>
+            {
+               if (task.Result == false)
+               {
+                  _startupAvailablePeers[nodeConfig.Key] = false;
+               }
+            });
             connectionTasks.Add(connectionTask);
+            connectionTasks.Add(markInactiveTask);
          }
          Task.WaitAll(connectionTasks);
       }
 
-      private async Task TryConnectToClient(int id, RaftMapNode.RaftMapNodeClient client)
+      private bool TryConnectToClient(int id, RaftMapNode.RaftMapNodeClient client)
       {
-         // TODO move magic numbers to configuration
-         for (int i = 1; i <= 5; i++)
+         // wait fixed amout (5 sec) => connect to nodes that can be connected to and consider only them. Mark others as inactive
+         try
          {
-            try
-            {
-               await client.TestConnectionAsync(new Google.Protobuf.WellKnownTypes.Empty());
-               return;
-            }
-            catch (RpcException)
-            {
-               _logger.LogWarning(@"""Failed to connect to node #{id} at {address}. 
-Attempt {i}. Retrying...""",
-                  id,
-                  _clientsAddresses[id],
-                  i
-               );
-
-               Thread.Sleep(5000);
-            }
+            client.TestConnection(new Google.Protobuf.WellKnownTypes.Empty());
+            return true;
+         }
+         catch (RpcException)
+         {
+            _logger.LogWarning(@"""Couldn't connect to node #{id}
+            It will be marked inactive""", id);
+            return false;
          }
 
-         throw new TimeoutException($"Couldn't connect to node #{id} at {_clientsAddresses[id]}");
+         // TODO move magic numbers to configuration
+         //          for (int i = 1; i <= 5; i++)
+         //          {
+         //             try
+         //             {
+         //                client.TestConnection(new Google.Protobuf.WellKnownTypes.Empty());
+         //                return;
+         //             }
+         //             catch (RpcException)
+         //             {
+         //                _logger.LogWarning(@"""Failed to connect to node #{id} at {address}. 
+         // Attempt {i}. Retrying...""",
+         //                   id,
+         //                   _clientsAddresses[id],
+         //                   i
+         //                );
+         //                // wait fixed amout (5 sec) => connect to nodes that can be connected to and consider only them. Mark others as inactive
+         //                // don't sleep: if request comes while sleeping => no reply => marked as inactive
+         //             }
+         //          }
+
+         //          throw new TimeoutException($"Couldn't connect to node #{id} at {_clientsAddresses[id]}");
       }
    }
 }

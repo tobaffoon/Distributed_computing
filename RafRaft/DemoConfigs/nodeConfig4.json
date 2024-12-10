@@ -1,26 +1,26 @@
 {
    "id": 4,
-   "port": 5024,
+   "port": 50024,
    "peers": [
       {
          "id": 1,
-         "address": "http://localhost:5021"
+         "address": "http://localhost:50021"
       },
       {
          "id": 2,
-         "address": "http://localhost:5022"
+         "address": "http://localhost:50022"
       },
       {
          "id": 3,
-         "address": "http://localhost:5023"
+         "address": "http://localhost:50023"
       },
       {
          "id": 0,
-         "address": "http://localhost:5020"
+         "address": "http://localhost:50020"
       },
       {
          "id": 5,
-         "address": "http://localhost:5025"
+         "address": "http://localhost:50025"
       }
    ]
 }

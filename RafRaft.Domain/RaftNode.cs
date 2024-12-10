@@ -53,7 +53,6 @@ namespace RafRaft.Domain
       private readonly int minElectionTimeout;
       private readonly int maxElectionTimeout;
       private readonly Timer electionTimer;
-      private readonly List<int> peersIds;
       private readonly Dictionary<int, bool> peersStatus;
       private int ClusterSize => peersStatus.Where(kvPair => kvPair.Value).Count() + 1; // where peerStatus is true (peer is active)
       private int leaderId = -1;
@@ -100,18 +99,16 @@ namespace RafRaft.Domain
 
          id = config.Id;
 
-         var peersWithoutThis = config.PeersIds.Except([id]);
-         peersIds = new List<int>(peersWithoutThis);
          peersStatus = [];
-         foreach (int peerId in peersIds)
+         foreach (int id in config.PeersIds)
          {
-            peersStatus[peerId] = true;
+            peersStatus[id] = true;
          }
 
          this.mediator = mediator;
 
-         nextIndex = new List<int>(peersIds.Count);
-         matchIndex = new List<int>(peersIds.Count);
+         nextIndex = new List<int>(peersStatus.Count);
+         matchIndex = new List<int>(peersStatus.Count);
 
          entriesLog = new List<RaftLogEntry<TDataIn>>();
 
@@ -327,6 +324,15 @@ namespace RafRaft.Domain
 
       public void StartUp()
       {
+         StartUp(new Dictionary<int, bool>());
+      }
+
+      public void StartUp(IDictionary<int, bool> actualPeersStatus)
+      {
+         foreach (int id in actualPeersStatus.Keys)
+         {
+            peersStatus[id] = actualPeersStatus[id];
+         }
          electionTimer.Change(GetRandomElectionTime(), Timeout.Infinite);
       }
 
@@ -376,7 +382,7 @@ namespace RafRaft.Domain
          // Heartbeat
          List<Task> taskList = [];
          AppendEntriesRequest<TDataIn> request;
-         foreach (int nodeId in peersIds)
+         foreach (int nodeId in peersStatus.Keys)
          {
             request = new AppendEntriesRequest<TDataIn>(CurrentTerm, id, commitIndex, commitTerm, [], commitIndex);
 
@@ -411,7 +417,7 @@ namespace RafRaft.Domain
             if (peersStatus[receiverId]) // if exception persists -> don't do repeated steps
             {
                _logger.LogWarning("Couldn't send Heartbeat to {id}. Marking it as inactive", receiverId);
-               _logger.LogWarning("Message: {message}", e.Message);
+               _logger.LogTrace("Connection error message: {message}", e.Message);
                peersStatus[receiverId] = false; // mark receiver as inactive
             }
          }
@@ -426,11 +432,16 @@ namespace RafRaft.Domain
 
          List<Task> taskList = [];
          VoteRequest request;
-         foreach (int nodeId in peersIds)
+         foreach (KeyValuePair<int, bool> peer in peersStatus)
          {
+            if (peer.Value == false)
+            {
+               continue;
+            }
+
             request = new VoteRequest(CurrentTerm, id, commitIndex, commitTerm);
 
-            taskList.Add(TryVoteRequest(nodeId, request, cancellationToken));
+            taskList.Add(TryVoteRequest(peer.Key, request, cancellationToken));
          }
          if (cancellationToken.IsCancellationRequested)
          {

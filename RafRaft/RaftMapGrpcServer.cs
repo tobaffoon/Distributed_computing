@@ -21,14 +21,15 @@ namespace RafRaft
          _node = new RaftNode(config, mediator, _logger);
       }
 
-      public void Start()
+      public void Start(IDictionary<int, bool> peersStatus)
       {
-         _node.StartUp();
          _started = true;
+         _node.StartUp(peersStatus);
       }
 
       public override Task<AppendMapEntriesReply> Heartbeat(AppendMapEntriesRequest request, ServerCallContext context)
       {
+         _logger.LogTrace("Receive Heartbeat request from {id}", request.LeaderId);
          if (!_started)
          {
             throw new RpcException(new Status(StatusCode.Unavailable, "Server has not started yet"));
@@ -40,6 +41,7 @@ namespace RafRaft
 
       public override Task<AppendMapEntriesReply> AppendEntries(AppendMapEntriesRequest request, ServerCallContext context)
       {
+         _logger.LogTrace("Receive AppendEntries request from {id}", request.LeaderId);
          if (!_started)
          {
             throw new RpcException(new Status(StatusCode.Unavailable, "Server has not started yet"));
@@ -51,6 +53,7 @@ namespace RafRaft
 
       public override Task<VoteMapReply> RequestVote(VoteMapRequest request, ServerCallContext context)
       {
+         _logger.LogTrace("Receive RequestVote request from {id}", request.CandidateId);
          if (!_started)
          {
             throw new RpcException(new Status(StatusCode.Unavailable, "Server has not started yet"));
