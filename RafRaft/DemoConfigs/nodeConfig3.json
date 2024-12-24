@@ -17,10 +17,6 @@
       {
          "id": 4,
          "address": "http://localhost:50024"
-      },
-      {
-         "id": 5,
-         "address": "http://localhost:50025"
       }
    ]
 }

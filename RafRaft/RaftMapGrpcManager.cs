@@ -10,16 +10,17 @@ namespace RafRaft
 
    public class RaftMapGrpcManager
    {
-      public const int STARTUP_TIME_MS = 5000;
       private readonly WebApplication _app;
       private readonly RaftGrpcNodeOptions _options;
       private readonly ILogger _logger;
       private readonly Dictionary<int, RaftMapNode.RaftMapNodeClient> _clients;
       private readonly RaftMapGrpcServer _server;
       private readonly Dictionary<int, bool> _startupAvailablePeers;
-
+      private int temp_port;
       public RaftMapGrpcManager(int port, RaftNodeConfig nodeConfig, RaftGrpcNodeOptions[] clientsConfig)
       {
+         temp_port = port;
+
          var builder = WebApplication.CreateBuilder();
 
          // Create server
@@ -40,6 +41,18 @@ namespace RafRaft
          // Create clients
          _clients = [];
          _startupAvailablePeers = [];
+
+         // Setup logging
+         builder.Logging.ClearProviders();
+         using ILoggerFactory factory = LoggerFactory.Create(builder => builder
+            .AddSimpleConsole(c =>
+               {
+                  c.TimestampFormat = "[HH:mm:ss:fffff] ";
+               })
+            .SetMinimumLevel(LogLevel.Trace));
+         _logger = factory.CreateLogger($"RaftNode #{nodeConfig.Id}");
+
+         Dictionary<int, GrpcChannel> _channels = [];
          foreach (var node in clientsConfig)
          {
             if (node.Id == nodeConfig.Id)
@@ -48,21 +61,23 @@ namespace RafRaft
             }
 
             GrpcChannel channel = GrpcChannel.ForAddress(node.Address);
+            try
+            {
+               channel.ConnectAsync();
+            }
+            catch (Exception e)
+            {
+               _logger.LogCritical(e.Message);
+            }
+            _logger.LogCritical(channel.State.ToString()); // save channels - check what is their status on each call/ Maybe change clients dictionary
+
             _clients[node.Id] = new RaftMapNode.RaftMapNodeClient(channel);
+            _channels[node.Id] = channel;
 
             _startupAvailablePeers[node.Id] = true;
          }
 
-         builder.Logging.ClearProviders();
-         using ILoggerFactory factory = LoggerFactory.Create(builder => builder
-            .AddSimpleConsole(c =>
-               {
-                  c.TimestampFormat = "[HH:mm:ss] ";
-               })
-            .SetMinimumLevel(LogLevel.Information));
-         _logger = factory.CreateLogger($"RaftNode #{nodeConfig.Id}");
-
-         RaftMapGrpcMediator clientMediator = new RaftMapGrpcMediator(_clients, nodeConfig, _logger);
+         RaftMapGrpcMediator clientMediator = new RaftMapGrpcMediator(_clients, _channels, nodeConfig, _logger);
          _server = new RaftMapGrpcServer(clientMediator, nodeConfig, _logger);
          builder.Services.AddSingleton(_server);
 
@@ -74,7 +89,6 @@ namespace RafRaft
       public Task Start()
       {
          Task serverTask = _app.RunAsync();
-         Thread.Sleep(STARTUP_TIME_MS); // time for sysadmin to launch other nodes
          ConnectToClients();
          _server.Start(_startupAvailablePeers);
          return serverTask;

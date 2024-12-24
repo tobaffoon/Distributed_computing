@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("RafRaft.Domain")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b6b78d56e331b427a6194e90cfe18847f53c29cd")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ce4df64158919e8f0a9e1c1d259684087365ac27")]
 [assembly: System.Reflection.AssemblyProductAttribute("RafRaft.Domain")]
 [assembly: System.Reflection.AssemblyTitleAttribute("RafRaft.Domain")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
