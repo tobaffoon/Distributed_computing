@@ -40,7 +40,7 @@ namespace RafRaft.Domain
       private int votesGot = 0;
       private int ActiveNodesNumber => peersStatus.Where(kvPair => kvPair.Value).Count() + 1; // where peerStatus is true (peer is active)
 
-      private readonly List<RaftLogEntry<TDataIn>> log = [];
+      private readonly List<RaftLogEntry<TDataIn>> log = [new RaftLogEntry<TDataIn>(0, 0, default)]; // sentinel entry to retreive info for regular append entries
       private int commitIndex = 0;
       private int LastLogIndex => log.Count - 1;
       private int LastLogTerm => log[^1].Term;
@@ -133,7 +133,7 @@ namespace RafRaft.Domain
       #region RequestVote
       public VoteReply HandleRequestVoteRequest(VoteRequest request)
       {
-         _logger.LogInformation("Received RequestVote request from {id}", request.CandidateId);
+         _logger.LogInformation("Received RequestVote request from {id} for Term {term}", request.CandidateId, request.Term);
 
          bool isNewTermLarger = TryBecomingFollower(request.Term, request.CandidateId);
          if (isNewTermLarger)
@@ -144,19 +144,7 @@ namespace RafRaft.Domain
 
          if (request.Term < currentTerm)
          {
-            _logger.LogInformation("Vote not granted to {candidateId}, because Term is too low", request.CandidateId);
-            return new VoteReply(currentTerm, false);
-         }
-
-         if (nodeState == State.Candidate)
-         {
-            _logger.LogInformation("Vote not granted to {candidateId}, because Node is candidate itself", request.CandidateId);
-            return new VoteReply(currentTerm, false);
-         }
-
-         if (nodeState == State.Leader)
-         {
-            _logger.LogInformation("Vote not granted to {candidateId}, because Node is Leader", request.CandidateId);
+            _logger.LogInformation("Vote not granted to {candidateId}, because Term is lower than node's", request.CandidateId);
             return new VoteReply(currentTerm, false);
          }
 
@@ -168,7 +156,7 @@ namespace RafRaft.Domain
             return new VoteReply(currentTerm, false);
          }
 
-         if (!IsLogWorse(request.LastLogId, request.LastLogTerm))
+         if (IsLogWorse(request.LastLogId, request.LastLogTerm))
          {
             _logger.LogInformation("Vote not granted to {candidateId}, because its log is worse", request.CandidateId);
             return new VoteReply(currentTerm, false);
@@ -261,30 +249,30 @@ namespace RafRaft.Domain
       /// <summary>
       /// Change term if new term is larger.
       /// </summary>
-      /// <param name="Term">New term</param>
+      /// <param name="term">New term</param>
       /// <param name="possibleLeaderId">Node's id with new term</param>
       /// <returns>
       /// False if new term isn't larger, didn't convert to follower. 
       /// True if new term is larger, so node was coverted to follower. 
       /// </returns>
-      private bool TryBecomingFollower(int Term, int possibleLeaderId)
+      private bool TryBecomingFollower(int term, int possibleLeaderId)
       {
-         if (Term <= currentTerm)
+         if (term <= currentTerm)
          {
             return false;
          }
 
-         currentTerm = Term;
+         currentTerm = term;
          switch (nodeState)
          {
             case State.Follower:
-               _logger.LogInformation("Receive AppendEntries from node with bigger Term as Follower's. New Leader");
+               _logger.LogInformation("Receive AppendEntries from node with bigger Term as Follower's.");
                break;
             case State.Candidate:
-               _logger.LogInformation("Receive AppendEntries from node with at least as large Term as Candidate's. New Leader. Becoming follower");
+               _logger.LogInformation("Receive AppendEntries from node with at least as large Term as Candidate's. Becoming follower");
                break;
             case State.Leader:
-               _logger.LogInformation("Receive AppendEntries from node with bigger Term as Leader's. New Leader. Becoming follower");
+               _logger.LogInformation("Receive AppendEntries from node with bigger Term as Leader's. Becoming follower");
                break;
          }
          BecomeFollower(possibleLeaderId);
