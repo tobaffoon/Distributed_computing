@@ -81,7 +81,7 @@ namespace RafRaft.Domain
       #region AppendEntries
       public AppendEntriesReply HandleAppendEntriesRequest(AppendEntriesRequest<TDataIn> request)
       {
-         _logger.LogInformation("Received AppendEntries request from {id}", request.LeaderId);
+         _logger.LogInformation("Received AppendEntries request from {id} (Term {term})", request.LeaderId, currentTerm);
 
          if (request.LeaderId == leaderId)
          {
@@ -120,7 +120,7 @@ namespace RafRaft.Domain
          int receiverId,
          AppendEntriesRequest<TDataIn> request)
       {
-         _logger.LogInformation("Send AppendEntries request to {id}", receiverId);
+         _logger.LogInformation("Send AppendEntries request to {id} (Term {term})", receiverId, currentTerm);
          return _mediator.SendAppendEntries(receiverId, request);
       }
 
@@ -174,8 +174,9 @@ namespace RafRaft.Domain
          return _mediator.SendRequestVote(receiverId, request);
       }
 
-      private void HandleRequestVoteReply(VoteReply reply)
+      private void HandleRequestVoteReply(int replierId, VoteReply reply)
       {
+         TryBecomingFollower(reply.Term, replierId);
          if (nodeState == State.Candidate && reply.VoteGranted)
          {
             votesGot++;
@@ -266,13 +267,13 @@ namespace RafRaft.Domain
          switch (nodeState)
          {
             case State.Follower:
-               _logger.LogInformation("Receive AppendEntries from node with bigger Term as Follower's.");
+               _logger.LogInformation("Received RPC request or response from node with bigger Term as Follower's.");
                break;
             case State.Candidate:
-               _logger.LogInformation("Receive AppendEntries from node with at least as large Term as Candidate's. Becoming follower");
+               _logger.LogInformation("Received RPC request or response from node with at least as large Term as Candidate's. Becoming follower");
                break;
             case State.Leader:
-               _logger.LogInformation("Receive AppendEntries from node with bigger Term as Leader's. Becoming follower");
+               _logger.LogInformation("Received RPC request or response from node with bigger Term as Leader's. Becoming follower");
                break;
          }
          BecomeFollower(possibleLeaderId);
@@ -376,7 +377,7 @@ namespace RafRaft.Domain
             var requestTask = SendRequestVote(receiverId, request);
             await requestTask.ContinueWith((task) =>
             {
-               HandleRequestVoteReply(task.Result);
+               HandleRequestVoteReply(receiverId, task.Result);
             });
 
             if (peersStatus[receiverId] == false)
@@ -418,7 +419,7 @@ namespace RafRaft.Domain
 
       private void BecomeLeader()
       {
-         _logger.LogInformation("Become leader with {got} / {required} votes", votesGot, ActiveNodesNumber);
+         _logger.LogInformation("Become leader for Term {term} with {got} / {required} votes", currentTerm, votesGot, ActiveNodesNumber);
          broadcastTimer.Change(0, broadcastTimeout); // start broadcast
          electionTimer.Change(Timeout.Infinite, Timeout.Infinite); // stop election timer
          VotedFor = null;
