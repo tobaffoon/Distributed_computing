@@ -10,21 +10,15 @@ namespace RafRaft.Domain
       where TDataIn : notnull
    {
       /// <summary>
-      /// Sends Heartbeat to a node, awaits a reply.
-      /// </summary>
-      /// <param name="receiverId">Id of receiver node. Reference to node by id is up to implementing class</param>
-      Task<AppendEntriesReply> SendHeartbeat(int receiverId, AppendEntriesRequest<TDataIn> request, CancellationToken token);
-
-      /// <summary>
       /// Sends AppendEntries to a node, awaits a reply.
       /// </summary>
       /// <param name="receiverId">Id of receiver node. Reference to node by id is up to implementing class</param>
-      Task<AppendEntriesReply> SendAppendEntries(int receiverId, AppendEntriesRequest<TDataIn> request, CancellationToken token);
+      Task<AppendEntriesReply> SendAppendEntries(int receiverId, AppendEntriesRequest<TDataIn> request);
 
       /// <summary>
       /// Sends RequestVote to a node, awaits a reply.
       /// </summary>
       /// <param name="receiverId">Id of receiver node. Reference to node by id is up to implementing class</param>
-      Task<VoteReply> SendRequestVote(int receiverId, VoteRequest request, CancellationToken token);
+      Task<VoteReply> SendRequestVote(int receiverId, VoteRequest request);
    }
 }
