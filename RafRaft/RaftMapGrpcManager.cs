@@ -99,7 +99,7 @@ namespace RafRaft
          List<Task> connectionTasks = [];
          foreach (var nodeConfig in _clients)
          {
-            Task<bool> connectionTask = Task.Run(() => TryConnectToClient(nodeConfig.Key, nodeConfig.Value));
+            Task<bool> connectionTask = TryConnectToClient(nodeConfig.Key, nodeConfig.Value);
             Task markInactiveTask = connectionTask.ContinueWith(task =>
             {
                if (task.Result == false)
@@ -113,12 +113,12 @@ namespace RafRaft
          Task.WaitAll(connectionTasks);
       }
 
-      private bool TryConnectToClient(int id, RaftMapNode.RaftMapNodeClient client)
+      private async Task<bool> TryConnectToClient(int id, RaftMapNode.RaftMapNodeClient client)
       {
          // wait fixed amout (5 sec) => connect to nodes that can be connected to and consider only them. Mark others as inactive
          try
          {
-            client.TestConnection(new Google.Protobuf.WellKnownTypes.Empty());
+            await client.TestConnectionAsync(new Google.Protobuf.WellKnownTypes.Empty());
             return true;
          }
          catch (RpcException)

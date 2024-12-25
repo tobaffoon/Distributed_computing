@@ -36,7 +36,6 @@ namespace RafRaft.Domain
          set
          {
             _votedFor = value;
-            Voted = true;
          }
       }
       private List<RaftLogEntry<TDataIn>> entriesLog;
@@ -44,9 +43,9 @@ namespace RafRaft.Domain
       private int commitTerm = 0;
       private int lastApplied = 0;
       //TODO Implement NextIndex evaluation
-      private List<int> nextIndex;
+      private Dictionary<int, int> nextIndex;
       //TODO Implement MatchIndex evaluation
-      private List<int> matchIndex;
+      private Dictionary<int, int> matchIndex;
       private readonly TState internalState;
       private readonly long broadcastTimeout;
       private readonly Timer broadcastTimer;
@@ -56,19 +55,8 @@ namespace RafRaft.Domain
       private readonly Dictionary<int, bool> peersStatus;
       private int _votesRequired;
       private int ActiveNodesNumber => peersStatus.Where(kvPair => kvPair.Value).Count() + 1; // where peerStatus is true (peer is active)
-      private int leaderId = -1;
+      private int? leaderId = null;
       private int votesGot = 0;
-
-      private int _votedBackValue = 0;
-      private bool Voted
-      {
-         get { return Interlocked.CompareExchange(ref _votedBackValue, 1, 1) == 1; }
-         set
-         {
-            if (value) Interlocked.CompareExchange(ref _votedBackValue, 1, 0);
-            else Interlocked.CompareExchange(ref _votedBackValue, 0, 1);
-         }
-      }
 
       private CancellationTokenSource _currentElectionCancellation = new CancellationTokenSource();
       private CancellationTokenSource _globalCancel = new CancellationTokenSource();
@@ -82,8 +70,8 @@ namespace RafRaft.Domain
          minElectionTimeout = config.MinElectionMillis;
          maxElectionTimeout = config.MaxElectionMillis;
 
-         broadcastTimer = new Timer(OnBroadcastElapsed, null, Timeout.Infinite, broadcastTimeout);
-         electionTimer = new Timer(OnElectionElapsed, null, Timeout.Infinite, Timeout.Infinite);
+         broadcastTimer = new Timer(BroadcastHeartbeats, null, Timeout.Infinite, broadcastTimeout);
+         electionTimer = new Timer(RestartElection, null, Timeout.Infinite, Timeout.Infinite);
 
          internalState = new TState();
 
@@ -98,39 +86,15 @@ namespace RafRaft.Domain
 
          this.mediator = mediator;
 
-         nextIndex = new List<int>(peersStatus.Count);
-         matchIndex = new List<int>(peersStatus.Count);
+         nextIndex = [];
+         matchIndex = [];
 
-         entriesLog = new List<RaftLogEntry<TDataIn>>();
+         entriesLog = [new RaftLogEntry<TDataIn>(0, 0, default)];
 
          _logger = logger;
       }
 
       #region Heartbeat
-      public AppendEntriesReply HandleHeartbeatRequest(AppendEntriesRequest<TDataIn> request)
-      {
-         _logger.LogTrace("Received Heartbeat request from {id} with Term: {Term}", request.LeaderId, CurrentTerm);
-         TryBecomingFollower(request.Term, request.LeaderId);
-         if (request.LeaderId == leaderId)
-         {
-            ResetElectionTimer();
-         }
-         return new AppendEntriesReply(CurrentTerm, true);
-      }
-
-      private Task<AppendEntriesReply> SendHeartbeat(
-         int receiverId,
-         AppendEntriesRequest<TDataIn> request,
-         CancellationToken token)
-      {
-         _logger.LogTrace("Send Heartbeat request to {id}", receiverId);
-         return mediator.SendHeartbeat(receiverId, request, token);
-      }
-
-      private void HandleHeartbeatReply(AppendEntriesReply reply)
-      {
-         // do absolutely nothing
-      }
       #endregion
 
       #region AppendEntries
@@ -138,36 +102,38 @@ namespace RafRaft.Domain
       {
          _logger.LogInformation("Received AppendEntries request from {id}", request.LeaderId);
 
-         if (request.LeaderId == leaderId)
+         if (request.Term < CurrentTerm)
          {
-            ResetElectionTimer();
-         }
-
-         #region Term correction
-         bool isNewTermLarger = TryBecomingFollower(request.Term, request.LeaderId);
-         if (!isNewTermLarger)
-         {
+            _logger.LogInformation("AppendEntries from {id} not acknowledged, because Term is too low", request.LeaderId);
             return new AppendEntriesReply(CurrentTerm, false);
          }
-         #endregion
+         bool isNewTermLarger = TryBecomingFollower(request.Term);
+         leaderId = request.LeaderId;
 
          #region Previous log entry discovery
          RaftLogEntry<TDataIn>? prevEntry = entriesLog[request.PrevLogId];
-         if (prevEntry is null || prevEntry.Term != request.PrevLogTerm)
+         if (entriesLog.Count - 1 < request.PrevLogId
+            || entriesLog[request.PrevLogId].Term != request.PrevLogTerm)
          {
+            entriesLog.RemoveRange(request.PrevLogId, entriesLog.Count - request.PrevLogId);
+            ResetElectionTimer();
             return new AppendEntriesReply(CurrentTerm, false);
          }
          #endregion
 
-         int lastNewEntryId = AppendEntries(request.Entries);
+         AppendEntries(request.Entries);
 
-         if (request.LeaderId > commitIndex)
+         if (request.LeaderCommitId > commitIndex)
          {
-            commitIndex = Math.Min(request.LeaderCommitId, lastNewEntryId);
+            commitIndex = Math.Min(request.LeaderCommitId, entriesLog.Count - 1);
+            // Commit logs
+            for (int i = lastApplied + 1; i <= commitIndex; i++)
+            {
+               internalState.Apply(entriesLog[i]);
+            }
          }
 
-         ApplyCommited();
-
+         ResetElectionTimer();
          return new AppendEntriesReply(CurrentTerm, true);
       }
 
@@ -180,24 +146,37 @@ namespace RafRaft.Domain
          return mediator.SendAppendEntries(receiverId, request, token);
       }
 
-      private void HandleAppendEntriesReply(AppendEntriesReply reply)
+      private void HandleAppendEntriesReply(int nodeId, AppendEntriesReply reply)
       {
          _logger.LogTrace("Received AppendEntries reply");
-         // TODO logic
+         TryBecomingFollower(reply.Term);
+         if (nodeState == State.Leader)
+         {
+            return;
+         }
+
+         if (reply.Success)
+         {
+            matchIndex[nodeId] = Math.Min(nextIndex[nodeId], entriesLog.Count - 1);
+            nextIndex[nodeId] = Math.Min(nextIndex[nodeId] + 1, entriesLog.Count);
+            if (commitIndex != entriesLog.Count - 1)
+            {
+               UpdateCommitIndex();
+            }
+         }
+         else
+         {
+            matchIndex[nodeId] -= 1;
+            nextIndex[nodeId] = 0;
+         }
       }
 
-      private int AppendEntries(IList<RaftLogEntry<TDataIn>> Entries)
+      private void AppendEntries(IList<RaftLogEntry<TDataIn>> Entries)
       {
-         if (!Entries.Any()) return commitIndex; // or appened idk
-
          foreach (RaftLogEntry<TDataIn> entry in Entries)
          {
             entriesLog.Add(entry);
-            commitIndex = entry.Index;
-            commitTerm = entry.Term;
          }
-
-         return commitIndex;
       }
       #endregion
 
@@ -206,32 +185,15 @@ namespace RafRaft.Domain
       {
          _logger.LogInformation("Received RequestVote request from {id}", request.CandidateId);
 
-         bool isNewTermLarger = TryBecomingFollower(request.Term, request.CandidateId);
-         if (isNewTermLarger)
-         {
-            _logger.LogInformation("Vote granted to {candidateId}, because its Term is higher", request.CandidateId);
-            return new VoteReply(CurrentTerm, true);
-         }
-
          if (request.Term < CurrentTerm)
          {
             _logger.LogInformation("Vote not granted to {candidateId}, because Term is too low", request.CandidateId);
             return new VoteReply(CurrentTerm, false);
          }
 
-         if (nodeState == State.Candidate)
-         {
-            _logger.LogInformation("Vote not granted to {candidateId}, because Node is candidate itself", request.CandidateId);
-            return new VoteReply(CurrentTerm, false);
-         }
+         bool isNewTermLarger = TryBecomingFollower(request.Term);
 
-         if (nodeState == State.Leader)
-         {
-            _logger.LogInformation("Vote not granted to {candidateId}, because Node is Leader", request.CandidateId);
-            return new VoteReply(CurrentTerm, false);
-         }
-
-         if (Voted)
+         if (VotedFor is not null)
          {
             _logger.LogInformation("Vote not granted to {candidateId}, because Node alreay voted for #{chosenId}",
                request.CandidateId,
@@ -239,7 +201,7 @@ namespace RafRaft.Domain
             return new VoteReply(CurrentTerm, false);
          }
 
-         if (!IsNewLogBetter(request.LastLogId, request.LastLogTerm))
+         if (IsLogWorse(request.LastLogId, request.LastLogTerm))
          {
             _logger.LogInformation("Vote not granted to {candidateId}, because its log is worse", request.CandidateId);
             return new VoteReply(CurrentTerm, false);
@@ -249,6 +211,7 @@ namespace RafRaft.Domain
          {
             _logger.LogInformation("Vote granted to {candidateId}", request.CandidateId);
             VotedFor = request.CandidateId;
+            ResetElectionTimer();
             return new VoteReply(CurrentTerm, true);
          }
       }
@@ -262,6 +225,8 @@ namespace RafRaft.Domain
 
       private void HandleRequestVoteReply(VoteReply reply)
       {
+         TryBecomingFollower(reply.Term);
+         _logger.LogInformation("Receive vote reply");
          if (nodeState == State.Candidate && reply.VoteGranted)
          {
             votesGot++;
@@ -324,14 +289,6 @@ namespace RafRaft.Domain
          ResetElectionTimer();
       }
 
-      private async void ApplyCommited()
-      {
-         for (; lastApplied < commitIndex; lastApplied++)
-         {
-            await Task.Run(() => internalState.Apply(entriesLog[lastApplied + 1]));
-         }
-      }
-
       /// <summary>
       /// Change term if new term is larger.
       /// </summary>
@@ -341,7 +298,7 @@ namespace RafRaft.Domain
       /// False if new term isn't larger, didn't convert to follower. 
       /// True if new term is larger, so node was coverted to follower. 
       /// </returns>
-      private bool TryBecomingFollower(int Term, int possibleLeaderId)
+      private bool TryBecomingFollower(int Term)
       {
          if (Term <= CurrentTerm)
          {
@@ -363,17 +320,18 @@ namespace RafRaft.Domain
                _logger.LogInformation("Receive AppendEntries from node with bigger Term as Leader's. New Leader. Becoming follower");
                break;
          }
-         BecomeFollower(possibleLeaderId);
+         BecomeFollower();
 
          return true;
       }
 
-      private bool IsNewLogBetter(int NewLogIndex, int NewLogTerm)
+      private bool IsLogWorse(int lastLogIndex, int lastLogTerm)
       {
-         return commitTerm <= NewLogTerm && commitIndex <= NewLogIndex;
+         return lastLogTerm < entriesLog[^1].Term ||
+          lastLogTerm == entriesLog[^1].Term && lastLogIndex <= (entriesLog.Count - 1);
       }
 
-      private async void OnBroadcastElapsed(object? Ignored)
+      private async void BroadcastHeartbeats(object? Ignored)
       {
          _logger.LogTrace($"Broadcast timer elapsed");
 
@@ -382,7 +340,9 @@ namespace RafRaft.Domain
          AppendEntriesRequest<TDataIn> request;
          foreach (int nodeId in peersStatus.Keys)
          {
-            request = new AppendEntriesRequest<TDataIn>(CurrentTerm, id, commitIndex, commitTerm, [], commitIndex);
+            int prevLogId = nextIndex[nodeId] - 1;
+            int prevLogTerm = entriesLog[prevLogId].Term;
+            request = new AppendEntriesRequest<TDataIn>(CurrentTerm, id, prevLogId, prevLogTerm, [], commitIndex);
 
             taskList.Add(TryHeatbeat(nodeId, request, _globalCancel.Token));
          }
@@ -398,9 +358,9 @@ namespace RafRaft.Domain
       {
          try
          {
-            var requestTask = SendHeartbeat(receiverId, request, cancellationToken);
+            var requestTask = SendAppendEntries(receiverId, request, cancellationToken);
             await requestTask.ContinueWith(
-               (task) => HandleHeartbeatReply(task.Result),
+               (task) => HandleAppendEntriesReply(receiverId, task.Result),
                cancellationToken
             );
 
@@ -428,18 +388,22 @@ namespace RafRaft.Domain
 
       private async Task BeginElection(CancellationToken cancellationToken)
       {
+         StopBroadcast();
+         nodeState = State.Candidate;
+
          CurrentTerm++;
 
          _logger.LogInformation("Begin election for Term {Term}", CurrentTerm);
 
          VotedFor = id;
          votesGot = 1;
+         leaderId = null;
 
          List<Task> taskList = [];
          VoteRequest request;
          foreach (int peerId in peersStatus.Keys)
          {
-            request = new VoteRequest(CurrentTerm, id, commitIndex, commitTerm);
+            request = new VoteRequest(CurrentTerm, id, entriesLog.Count - 1, entriesLog[^1].Term);
 
             taskList.Add(TryVoteRequest(peerId, request, cancellationToken));
          }
@@ -488,58 +452,39 @@ namespace RafRaft.Domain
          }
       }
 
-      private void OnElectionElapsed(object? Ignored)
+      private async void RestartElection(object? Ignored)
       {
          _logger.LogTrace("Election timer elapsed");
-
-         ResetElectionTimer();
-         StopElection();
 
          _currentElectionCancellation = new CancellationTokenSource();
          var savedToken = _currentElectionCancellation;
 
-         lock (_electionLock)
-         {
-            if (nodeState == State.Leader)
-            {
-               _logger.LogTrace("Node is Leader. Election doesn't begin");
-               return;
-            }
-
-            if (!Voted || VotedFor == id)
-            {
-               BecomeCandidate(savedToken.Token);
-               return;
-            }
-
-            _logger.LogTrace("Node has voted. Election doesn't begin");
-            Voted = false;
-         }
+         ResetElectionTimer();
+         StopElection();
+         await BeginElection(savedToken.Token);
       }
 
       private void BecomeLeader()
       {
          _logger.LogInformation("Become leader with {got} / {required} votes", votesGot, ActiveNodesNumber);
-         broadcastTimer.Change(0, broadcastTimeout);
+         StartBroadcast();
+         StopElectionTimeout();
          nodeState = State.Leader;
-         //TODO: init next index
-         //TODO: init match index
+         leaderId = id;
+         foreach (int nodeId in peersStatus.Keys)
+         {
+            nextIndex[nodeId] = entriesLog.Count;
+            matchIndex[nodeId] = 0;
+         }
       }
 
-      private Task BecomeCandidate(CancellationToken cancellationToken)
+      private void BecomeFollower()
       {
-         StopBroadcast();
-         nodeState = State.Candidate;
-         return BeginElection(cancellationToken);
-      }
-
-      private void BecomeFollower(int newLeaderId)
-      {
-         _logger.LogInformation("New Leader is {id}", newLeaderId);
-         leaderId = newLeaderId;
          ResetElectionTimer();
          StopBroadcast();
          StopElection();
+         VotedFor = null;
+         votesGot = 0;
          nodeState = State.Follower;
       }
 
@@ -551,6 +496,17 @@ namespace RafRaft.Domain
             throw new Exception($"Node #{id} couldn't denote from leadership");
          }
       }
+
+      private void StartBroadcast()
+      {
+         broadcastTimer.Change(0, broadcastTimeout);
+      }
+
+      private void StopElectionTimeout()
+      {
+         electionTimer.Change(Timeout.Infinite, Timeout.Infinite);
+      }
+
       private void StopElection()
       {
          _currentElectionCancellation.Cancel();
@@ -566,5 +522,41 @@ namespace RafRaft.Domain
       {
          return _random.Next(minElectionTimeout, maxElectionTimeout);
       }
+
+      private void UpdateCommitIndex()
+      {
+         for (int latestReplicatedId = commitIndex + 1; latestReplicatedId < entriesLog.Count; latestReplicatedId++)
+         {
+            int numOfReplicatingNodes = 0;
+            foreach (int nodeId in peersStatus.Keys)
+            {
+               if (matchIndex[nodeId] >= latestReplicatedId)
+               {
+                  numOfReplicatingNodes++;
+               }
+            }
+
+            if (numOfReplicatingNodes > (peersStatus.Count + 1) / 2)
+            {
+               if (entriesLog[latestReplicatedId].Term == CurrentTerm)
+               {
+                  commitIndex = latestReplicatedId;
+               }
+            }
+
+            else
+            {
+               break;
+            }
+         }
+
+         // Commit logs
+         for (int i = lastApplied + 1; i <= commitIndex; i++)
+         {
+            internalState.Apply(entriesLog[i]);
+            lastApplied++;
+         }
+      }
+
    }
 }
