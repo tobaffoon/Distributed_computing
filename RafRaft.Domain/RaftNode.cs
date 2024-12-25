@@ -36,7 +36,7 @@ namespace RafRaft.Domain
             _votedFor = value;
          }
       }
-      private int VotesRequired => (peersStatus.Count + 1) / 2;
+      private int VotesRequired => (peersStatus.Count + 1) / 2 + 1;
       private int votesGot = 0;
       private int ActiveNodesNumber => peersStatus.Where(kvPair => kvPair.Value).Count() + 1; // where peerStatus is true (peer is active)
 
@@ -78,32 +78,6 @@ namespace RafRaft.Domain
          _logger = logger;
       }
 
-      #region Heartbeat
-      public AppendEntriesReply HandleHeartbeatRequest(AppendEntriesRequest<TDataIn> request)
-      {
-         _logger.LogTrace("Received Heartbeat request from {id} with Term: {Term}", request.LeaderId, currentTerm);
-         TryBecomingFollower(request.Term, request.LeaderId);
-         if (request.LeaderId == leaderId)
-         {
-            ResetElectionTimer();
-         }
-         return new AppendEntriesReply(currentTerm, true);
-      }
-
-      private Task<AppendEntriesReply> SendHeartbeat(
-         int receiverId,
-         AppendEntriesRequest<TDataIn> request)
-      {
-         _logger.LogTrace("Send Heartbeat request to {id}", receiverId);
-         return _mediator.SendAppendEntries(receiverId, request);
-      }
-
-      private void HandleHeartbeatReply(AppendEntriesReply reply)
-      {
-         // do absolutely nothing
-      }
-      #endregion
-
       #region AppendEntries
       public AppendEntriesReply HandleAppendEntriesRequest(AppendEntriesRequest<TDataIn> request)
       {
@@ -111,7 +85,7 @@ namespace RafRaft.Domain
 
          if (request.LeaderId == leaderId)
          {
-            ResetElectionTimer();
+            RestartElectionTimer();
          }
 
          #region Term correction
@@ -152,7 +126,6 @@ namespace RafRaft.Domain
 
       private void HandleAppendEntriesReply(AppendEntriesReply reply)
       {
-         _logger.LogTrace("Received AppendEntries reply");
          // TODO logic
       }
       #endregion
@@ -274,7 +247,7 @@ namespace RafRaft.Domain
          {
             peersStatus[id] = actualPeersStatus[id];
          }
-         ResetElectionTimer();
+         RestartElectionTimer();
       }
 
       private async void ApplyCommited()
@@ -335,24 +308,24 @@ namespace RafRaft.Domain
          {
             request = new AppendEntriesRequest<TDataIn>(currentTerm, id, 0, 0, [], commitIndex);
 
-            taskList.Add(TryHeatbeat(nodeId, request));
+            taskList.Add(AppendEntries(nodeId, request));
          }
 
          await Task.WhenAll(taskList);
       }
 
-      private async Task TryHeatbeat(int receiverId, AppendEntriesRequest<TDataIn> request)
+      private async Task AppendEntries(int receiverId, AppendEntriesRequest<TDataIn> request)
       {
          try
          {
-            var requestTask = SendHeartbeat(receiverId, request);
+            var requestTask = SendAppendEntries(receiverId, request);
             await requestTask.ContinueWith(
-               (task) => HandleHeartbeatReply(task.Result)
+               (task) => HandleAppendEntriesReply(task.Result)
             );
 
             if (peersStatus[receiverId] == false)
             {
-               _logger.LogWarning("Previously inactive {id} received Heartbeat. Marking it as active", receiverId);
+               _logger.LogWarning("Previously inactive {id} received AppendEntries. Marking it as active", receiverId);
             }
             peersStatus[receiverId] = true; // mark receiver as active if everything completes
          }
@@ -360,14 +333,14 @@ namespace RafRaft.Domain
          {
             if (peersStatus[receiverId]) // if exception persists -> don't do repeated steps
             {
-               _logger.LogWarning("Couldn't send Heartbeat to {id}. Marking it as inactive", receiverId);
+               _logger.LogWarning("Couldn't send AppendEntries to {id}. Marking it as inactive", receiverId);
                _logger.LogTrace("Connection error message: {message}", e.Message);
                peersStatus[receiverId] = false; // mark receiver as inactive
             }
          }
       }
 
-      private void ResetElectionTimer()
+      private void RestartElectionTimer()
       {
          electionTimer.Change(GetRandomElectionTime(), Timeout.Infinite);
       }
@@ -439,15 +412,16 @@ namespace RafRaft.Domain
       {
          _logger.LogTrace("Election timer elapsed");
 
-         ResetElectionTimer();
-
          if (nodeState == State.Candidate)
          {
+            RestartElectionTimer();
             await BeginElection();
             return;
          }
+
          if (VotedFor == null)
          {
+            RestartElectionTimer();
             await BecomeCandidate();
             return;
          }
@@ -458,7 +432,9 @@ namespace RafRaft.Domain
       private void BecomeLeader()
       {
          _logger.LogInformation("Become leader with {got} / {required} votes", votesGot, ActiveNodesNumber);
-         broadcastTimer.Change(0, broadcastTimeout);
+         broadcastTimer.Change(0, broadcastTimeout); // start broadcast
+         electionTimer.Change(Timeout.Infinite, Timeout.Infinite); // stop election timer
+         VotedFor = null;
          nodeState = State.Leader;
          //TODO: init next index
          //TODO: init match index
@@ -466,7 +442,7 @@ namespace RafRaft.Domain
 
       private async Task BecomeCandidate()
       {
-         StopBroadcast();
+         broadcastTimer.Change(Timeout.Infinite, broadcastTimeout);
          nodeState = State.Candidate;
          await BeginElection();
       }
@@ -475,18 +451,10 @@ namespace RafRaft.Domain
       {
          _logger.LogInformation("New Leader is {id}", newLeaderId);
          leaderId = newLeaderId;
-         ResetElectionTimer();
-         StopBroadcast();
+         VotedFor = null;
+         RestartElectionTimer();
+         broadcastTimer.Change(Timeout.Infinite, broadcastTimeout);
          nodeState = State.Follower;
-      }
-
-      private void StopBroadcast()
-      {
-         bool result = broadcastTimer.Change(Timeout.Infinite, broadcastTimeout);
-         if (!result)
-         {
-            throw new Exception($"Node #{id} couldn't denote from leadership");
-         }
       }
 
       private RaftLogEntry<TDataIn> CreateLogEntry(TDataIn Data)

@@ -25,21 +25,6 @@ namespace RafRaft
          _node.StartUp(peersStatus);
       }
 
-      public override Task<AppendMapEntriesReply> Heartbeat(AppendMapEntriesRequest request, ServerCallContext context)
-      {
-         if (!_started)
-         {
-            throw new RpcException(new Status(StatusCode.Unavailable, "Server has not started yet"));
-         }
-
-         if (context.CancellationToken.IsCancellationRequested)
-         {
-            throw new RpcException(new Status(StatusCode.Cancelled, ""));
-         }
-         var reply = _node.HandleHeartbeatRequest(request.ConvertFromGrpc());
-         return Task.FromResult(reply.ConvertToGrpc());
-      }
-
       public override Task<AppendMapEntriesReply> AppendEntries(AppendMapEntriesRequest request, ServerCallContext context)
       {
          if (!_started)
@@ -47,10 +32,6 @@ namespace RafRaft
             throw new RpcException(new Status(StatusCode.Unavailable, "Server has not started yet"));
          }
 
-         if (context.CancellationToken.IsCancellationRequested)
-         {
-            throw new RpcException(new Status(StatusCode.Cancelled, ""));
-         }
          var reply = _node.HandleAppendEntriesRequest(request.ConvertFromGrpc());
          return Task.FromResult(reply.ConvertToGrpc());
       }
@@ -62,10 +43,6 @@ namespace RafRaft
             throw new RpcException(new Status(StatusCode.Unavailable, "Server has not started yet"));
          }
 
-         if (context.CancellationToken.IsCancellationRequested)
-         {
-            throw new RpcException(new Status(StatusCode.Cancelled, ""));
-         }
          var reply = _node.HandleRequestVoteRequest(request.ConvertFromGrpc());
          return Task.FromResult(reply.ConvertToGrpc());
       }

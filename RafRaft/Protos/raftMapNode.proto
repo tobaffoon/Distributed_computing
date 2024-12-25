@@ -7,7 +7,6 @@ option csharp_namespace = "RafRaft.Protos";
 package RafRaft;
 
 service RaftMapNode {
-    rpc Heartbeat(AppendMapEntriesRequest) returns (AppendMapEntriesReply);
     rpc AppendEntries(AppendMapEntriesRequest) returns (AppendMapEntriesReply);
     rpc RequestVote(VoteMapRequest) returns (VoteMapReply);
     rpc TestConnection(google.protobuf.Empty) returns (google.protobuf.Empty);
