@@ -20,7 +20,15 @@ namespace RafRaft
          RaftGrpcNodeOptions[] nodes = builder.Configuration.GetSection("Peers").Get<RaftGrpcNodeOptions[]>()!;
 
          RaftNodeConfig nodeConfig = new RaftNodeConfig(id, 100, 450, 550, nodes.Select(grpcOptions => grpcOptions.Id).ToList());
-         RaftMapGrpcManager manager = new RaftMapGrpcManager(port, nodeConfig, nodes);
+         RaftMapGrpcManager manager;
+         if (args.Any(arg => arg.Equals("--init-node")))
+         {
+            manager = new RaftMapGrpcManager(port, nodeConfig, nodes, isInitNode: true);
+         }
+         else
+         {
+            manager = new RaftMapGrpcManager(port, nodeConfig, nodes, isInitNode: false);
+         }
          await manager.Start();
       }
    }

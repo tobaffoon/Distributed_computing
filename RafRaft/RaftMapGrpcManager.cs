@@ -17,7 +17,7 @@ namespace RafRaft
       private readonly RaftMapGrpcServer _server;
       private readonly Dictionary<int, bool> _startupAvailablePeers;
       private int temp_port;
-      public RaftMapGrpcManager(int port, RaftNodeConfig nodeConfig, RaftGrpcNodeOptions[] clientsConfig)
+      public RaftMapGrpcManager(int port, RaftNodeConfig nodeConfig, RaftGrpcNodeOptions[] clientsConfig, bool isInitNode)
       {
          temp_port = port;
 
@@ -78,7 +78,7 @@ namespace RafRaft
          }
 
          RaftMapGrpcMediator clientMediator = new RaftMapGrpcMediator(_clients, _channels, nodeConfig, _logger);
-         _server = new RaftMapGrpcServer(clientMediator, nodeConfig, _logger);
+         _server = new RaftMapGrpcServer(clientMediator, nodeConfig, _logger, isInitNode);
          builder.Services.AddSingleton(_server);
 
 

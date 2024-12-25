@@ -13,10 +13,10 @@ namespace RafRaft
       private readonly ILogger _logger;
       private bool _started = false;
 
-      public RaftMapGrpcServer(RaftMapGrpcMediator mediator, RaftNodeConfig config, ILogger logger)
+      public RaftMapGrpcServer(RaftMapGrpcMediator mediator, RaftNodeConfig config, ILogger logger, bool isInitNode)
       {
          _logger = logger;
-         _node = new RaftNode(config, mediator, _logger);
+         _node = new RaftNode(config, mediator, _logger, isInitNode);
       }
 
       public void Start(IDictionary<int, bool> peersStatus)
@@ -25,15 +25,15 @@ namespace RafRaft
          _node.StartUp(peersStatus);
       }
 
-      public override Task<AppendMapEntriesReply> AppendEntries(AppendMapEntriesRequest request, ServerCallContext context)
+      public override async Task<AppendMapEntriesReply> AppendEntries(AppendMapEntriesRequest request, ServerCallContext context)
       {
          if (!_started)
          {
             throw new RpcException(new Status(StatusCode.Unavailable, "Server has not started yet"));
          }
 
-         var reply = _node.HandleAppendEntriesRequest(request.ConvertFromGrpc());
-         return Task.FromResult(reply.ConvertToGrpc());
+         var reply = await _node.HandleAppendEntriesRequest(request.ConvertFromGrpc());
+         return reply.ConvertToGrpc();
       }
 
       public override Task<VoteMapReply> RequestVote(VoteMapRequest request, ServerCallContext context)

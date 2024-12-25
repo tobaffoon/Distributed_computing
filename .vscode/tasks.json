@@ -38,6 +38,19 @@
          "problemMatcher": "$msCompile"
       },
       {
+         "label": "runNode0Init",
+         "command": "dotnet",
+         "type": "process",
+         "args": [
+            "run",
+            "--project",
+            "${workspaceFolder}/RafRaft/RafRaft.csproj",
+            "${workspaceFolder}/RafRaft/DemoConfigs/nodeConfig0.json",
+            "--init-node"
+         ],
+         "problemMatcher": "$msCompile"
+      },
+      {
          "label": "runNode0",
          "command": "dotnet",
          "type": "process",
