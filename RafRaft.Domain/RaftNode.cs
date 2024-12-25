@@ -301,7 +301,6 @@ namespace RafRaft.Domain
       {
          _logger.LogTrace($"Broadcast timer elapsed");
 
-         // Heartbeat
          List<Task> taskList = [];
          AppendEntriesRequest<TDataIn> request;
          foreach (int nodeId in peersStatus.Keys)
