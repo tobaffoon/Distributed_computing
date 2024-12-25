@@ -36,7 +36,7 @@ namespace RafRaft
          {
             throw new RpcException(new Status(StatusCode.Cancelled, ""));
          }
-         var reply = _node.HandleAppendEntriesRequest(request.ConvertFromGrpc());
+         var reply = _node.HandleHeartbeatRequest(request.ConvertFromGrpc());
          return Task.FromResult(reply.ConvertToGrpc());
       }
 

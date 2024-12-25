@@ -45,9 +45,31 @@ namespace RafRaft
          catch (RpcException ex) when (ex.StatusCode == StatusCode.DeadlineExceeded)
          {
             _logger.LogError("AppendEntries timeout.");
-            throw;
+            return null;
          }
 
+      }
+
+      public async Task<AppendEntriesReply> SendHeartbeat(
+         int receiverId,
+         AppendEntriesRequest<KeyValuePair<string, Data>> request,
+         CancellationToken cancellationToken)
+      {
+         // _logger.LogInformation("Send Heartbeat to #{id} with status {status}", receiverId, _channels[receiverId].State);
+         AppendMapEntriesRequest grpcRequest = request.ConvertToGrpc();
+         try
+         {
+            using var cancelIn1Millis = new CancellationTokenSource(TimeSpan.FromMilliseconds(1));
+            using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cancelIn1Millis.Token);
+            AppendMapEntriesReply grpcReply = await Clients[receiverId].HeartbeatAsync(grpcRequest, cancellationToken: cancellationToken);
+            AppendEntriesReply reply = grpcReply.ConvertFromGrpc();
+            return reply;
+         }
+         catch (RpcException ex) when (ex.StatusCode == StatusCode.DeadlineExceeded)
+         {
+            _logger.LogError("Heartbeat timeout.");
+            return null;
+         }
       }
 
       public async Task<VoteReply> SendRequestVote(
@@ -59,16 +81,16 @@ namespace RafRaft
          VoteMapRequest grpcRequest = request.ConvertToGrpc();
          try
          {
-            // using var cancelIn1Millis = new CancellationTokenSource(TimeSpan.FromMilliseconds(1));
-            // using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cancelIn1Millis.Token);
-            VoteMapReply grpcReply = await Clients[receiverId].RequestVoteAsync(grpcRequest/* , cancellationToken: cancellationToken */);
+            using var cancelIn1Millis = new CancellationTokenSource(TimeSpan.FromMilliseconds(1));
+            using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cancelIn1Millis.Token);
+            VoteMapReply grpcReply = await Clients[receiverId].RequestVoteAsync(grpcRequest, cancellationToken: cancellationToken);
             VoteReply reply = grpcReply.ConvertFromGrpc();
             return reply;
          }
          catch (RpcException ex) when (ex.StatusCode == StatusCode.DeadlineExceeded)
          {
             _logger.LogError("RequestVote timeout.");
-            throw;
+            return null;
          }
       }
    }

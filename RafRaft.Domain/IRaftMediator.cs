@@ -10,6 +10,12 @@ namespace RafRaft.Domain
       where TDataIn : notnull
    {
       /// <summary>
+      /// Sends Heartbeat to a node, awaits a reply.
+      /// </summary>
+      /// <param name="receiverId">Id of receiver node. Reference to node by id is up to implementing class</param>
+      Task<AppendEntriesReply> SendHeartbeat(int receiverId, AppendEntriesRequest<TDataIn> request, CancellationToken token);
+
+      /// <summary>
       /// Sends AppendEntries to a node, awaits a reply.
       /// </summary>
       /// <param name="receiverId">Id of receiver node. Reference to node by id is up to implementing class</param>
