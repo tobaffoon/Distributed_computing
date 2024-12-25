@@ -39,9 +39,10 @@ namespace RafRaft.Domain
             Voted = true;
          }
       }
-      private List<RaftLogEntry<TDataIn>> entriesLog;
+      private List<RaftLogEntry<TDataIn>> log;
       private int commitIndex = 0;
-      private int commitTerm = 0;
+      private int LastLogIndex => log.Count - 1;
+      private int LastLogTerm => log[^1].Term;
       private int lastApplied = 0;
       //TODO Implement NextIndex evaluation
       private List<int> nextIndex;
@@ -101,7 +102,7 @@ namespace RafRaft.Domain
          nextIndex = new List<int>(peersStatus.Count);
          matchIndex = new List<int>(peersStatus.Count);
 
-         entriesLog = new List<RaftLogEntry<TDataIn>>();
+         log = new List<RaftLogEntry<TDataIn>>();
 
          _logger = logger;
       }
@@ -152,19 +153,19 @@ namespace RafRaft.Domain
          #endregion
 
          #region Previous log entry discovery
-         RaftLogEntry<TDataIn>? prevEntry = entriesLog[request.PrevLogId];
+         RaftLogEntry<TDataIn>? prevEntry = log[request.PrevLogId];
          if (prevEntry is null || prevEntry.Term != request.PrevLogTerm)
          {
             return new AppendEntriesReply(CurrentTerm, false);
          }
          #endregion
 
-         int lastNewEntryId = AppendEntries(request.Entries);
+         log.AddRange(request.Entries);
 
-         if (request.LeaderId > commitIndex)
+         /* if (request.LeaderId > commitIndex)
          {
             commitIndex = Math.Min(request.LeaderCommitId, lastNewEntryId);
-         }
+         } */
 
          ApplyCommited();
 
@@ -184,20 +185,6 @@ namespace RafRaft.Domain
       {
          _logger.LogTrace("Received AppendEntries reply");
          // TODO logic
-      }
-
-      private int AppendEntries(IList<RaftLogEntry<TDataIn>> Entries)
-      {
-         if (!Entries.Any()) return commitIndex; // or appened idk
-
-         foreach (RaftLogEntry<TDataIn> entry in Entries)
-         {
-            entriesLog.Add(entry);
-            commitIndex = entry.Index;
-            commitTerm = entry.Term;
-         }
-
-         return commitIndex;
       }
       #endregion
 
@@ -239,7 +226,7 @@ namespace RafRaft.Domain
             return new VoteReply(CurrentTerm, false);
          }
 
-         if (!IsNewLogBetter(request.LastLogId, request.LastLogTerm))
+         if (!IsLogWorse(request.LastLogId, request.LastLogTerm))
          {
             _logger.LogInformation("Vote not granted to {candidateId}, because its log is worse", request.CandidateId);
             return new VoteReply(CurrentTerm, false);
@@ -328,7 +315,7 @@ namespace RafRaft.Domain
       {
          for (; lastApplied < commitIndex; lastApplied++)
          {
-            await Task.Run(() => internalState.Apply(entriesLog[lastApplied + 1]));
+            await Task.Run(() => internalState.Apply(log[lastApplied + 1]));
          }
       }
 
@@ -368,9 +355,9 @@ namespace RafRaft.Domain
          return true;
       }
 
-      private bool IsNewLogBetter(int NewLogIndex, int NewLogTerm)
+      private bool IsLogWorse(int otherLogIndex, int otherLogTerm)
       {
-         return commitTerm <= NewLogTerm && commitIndex <= NewLogIndex;
+         return otherLogTerm < LastLogTerm && otherLogIndex < LastLogIndex;
       }
 
       private async void OnBroadcastElapsed(object? Ignored)
@@ -382,7 +369,7 @@ namespace RafRaft.Domain
          AppendEntriesRequest<TDataIn> request;
          foreach (int nodeId in peersStatus.Keys)
          {
-            request = new AppendEntriesRequest<TDataIn>(CurrentTerm, id, commitIndex, commitTerm, [], commitIndex);
+            request = new AppendEntriesRequest<TDataIn>(CurrentTerm, id, 0, 0, [], commitIndex);
 
             taskList.Add(TryHeatbeat(nodeId, request, _globalCancel.Token));
          }
@@ -439,7 +426,7 @@ namespace RafRaft.Domain
          VoteRequest request;
          foreach (int peerId in peersStatus.Keys)
          {
-            request = new VoteRequest(CurrentTerm, id, commitIndex, commitTerm);
+            request = new VoteRequest(CurrentTerm, id, 0, 0);
 
             taskList.Add(TryVoteRequest(peerId, request, cancellationToken));
          }
