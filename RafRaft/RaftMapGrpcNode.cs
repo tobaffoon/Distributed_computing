@@ -39,6 +39,7 @@ namespace RafRaft
          {
             while (lastApplied < newEntryIndex)
             {
+               _logger.LogTrace("lastApplies: {l}; newEntryIndex: {n}", lastApplied, newEntryIndex);
                await Task.Run(() => Thread.Sleep(1000));
             }
          }

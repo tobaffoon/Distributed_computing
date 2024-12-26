@@ -124,9 +124,10 @@ namespace RafRaft.Domain
          }
 
          // _logger.LogTrace("Log before: {log}", log);
-         foreach (var entry in request.Entries)
+         log.AddRange(request.Entries);
+         if (request.Entries.Count != 0)
          {
-            log.Add(entry);
+            _logger.LogInformation("Logged: {logs}", request.Entries);
          }
          // _logger.LogTrace("Log after: {log}", log);
 
@@ -156,6 +157,7 @@ namespace RafRaft.Domain
             return;
          }
 
+         // _logger.LogTrace("Before: nextIndex[{id}]={n}; matchIndex[{id}]={m}", replierID, nextIndex[replierID], replierID, matchIndex[replierID]);
          if (reply.Success)
          {
             // _logger.LogTrace("Old nextIndex[{node}]: {nextId}", replierID, nextIndex[replierID]);
@@ -172,6 +174,7 @@ namespace RafRaft.Domain
             nextIndex[replierID] -= 1;
             matchIndex[replierID] = 0;
          }
+         // _logger.LogTrace("After: nextIndex[{id}]={n}; matchIndex[{id}]={m}", replierID, nextIndex[replierID], replierID, matchIndex[replierID]);
       }
       #endregion
 
@@ -228,9 +231,11 @@ namespace RafRaft.Domain
       #endregion
       protected async Task LeaderCommitAndApply()
       {
-         for (int possibleCommitId = commitIndex + 1; possibleCommitId < LastLogIndex; possibleCommitId++)
+         // _logger.LogTrace("commitIndex: {p}; log.Count: {l}", commitIndex, log.Count);
+         for (int possibleCommitId = commitIndex + 1; possibleCommitId < log.Count; possibleCommitId++)
          {
             int numReplicated = matchIndex.Values.Where(replicatedId => replicatedId >= possibleCommitId).Count();
+            // _logger.LogTrace("possibleCommitId: {p}; log.Count: {l}; numReplicated: {n}; Quorum: {q}", possibleCommitId, LastLolog.CountgIndex, numReplicated, QuorumNum);
             if (numReplicated + 1 >= QuorumNum)
             {
                if (log[possibleCommitId].Term == currentTerm)
