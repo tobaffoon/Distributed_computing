@@ -58,6 +58,9 @@ namespace RafRaft.Domain
 
       protected bool canReceiveRpcs = false; // crutch because server just won't start in time
 
+      protected Lock applyLock = new Lock();
+      protected CancellationTokenSource broadcastCancel = new CancellationTokenSource();
+
       public RaftNode(RaftNodeConfig config, IRaftMediator<TDataIn> mediator, ILogger logger, bool isInitNode)
       {
          broadcastTimeout = config.BroadcastTime;
@@ -102,7 +105,7 @@ namespace RafRaft.Domain
       }
 
       #region AppendEntries
-      public async Task<AppendEntriesReply> HandleAppendEntriesRequest(AppendEntriesRequest<TDataIn> request)
+      public AppendEntriesReply HandleAppendEntriesRequest(AppendEntriesRequest<TDataIn> request)
       {
          _logger.LogInformation("Received AppendEntries request from {id} (Term {term})", request.LeaderId, request.Term);
          canReceiveRpcs = true;
@@ -135,7 +138,7 @@ namespace RafRaft.Domain
          {
             commitIndex = Math.Min(request.LeaderCommitId, LastLogIndex); // update commitIndex preventing out of bounds for log
          }
-         await ApplyCommited();
+         ApplyCommited();
 
          return new AppendEntriesReply(currentTerm, true);
       }
@@ -145,6 +148,10 @@ namespace RafRaft.Domain
          AppendEntriesRequest<TDataIn> request)
       {
          _logger.LogInformation("Send AppendEntries request to {id} (Term {term})", receiverId, currentTerm);
+         if (request.Entries.Count != 0)
+         {
+            _logger.LogTrace("With entries: {entries}", request.Entries);
+         }
          return _mediator.SendAppendEntries(receiverId, request);
       }
 
@@ -160,9 +167,9 @@ namespace RafRaft.Domain
          // _logger.LogTrace("Before: nextIndex[{id}]={n}; matchIndex[{id}]={m}", replierID, nextIndex[replierID], replierID, matchIndex[replierID]);
          if (reply.Success)
          {
-            // _logger.LogTrace("Old nextIndex[{node}]: {nextId}", replierID, nextIndex[replierID]);
+            _logger.LogTrace("Old nextIndex[{node}]: {nextId}", replierID, nextIndex[replierID]);
             nextIndex[replierID] = Math.Min(nextIndex[replierID] + 1, LastLogIndex + 1);
-            // _logger.LogTrace("New nextIndex[{node}]: {nextId}", replierID, nextIndex[replierID]);
+            _logger.LogTrace("New nextIndex[{node}]: {nextId}", replierID, nextIndex[replierID]);
             matchIndex[replierID] = Math.Min(nextIndex[replierID], LastLogIndex);
             if (commitIndex != LastLogIndex)
             {
@@ -172,6 +179,7 @@ namespace RafRaft.Domain
          else
          {
             nextIndex[replierID] -= 1;
+            _logger.LogTrace("Fail replictation. New nextIndex[{node}]: {nextId}", replierID, nextIndex[replierID]);
             matchIndex[replierID] = 0;
          }
          // _logger.LogTrace("After: nextIndex[{id}]={n}; matchIndex[{id}]={m}", replierID, nextIndex[replierID], replierID, matchIndex[replierID]);
@@ -249,16 +257,19 @@ namespace RafRaft.Domain
             }
          }
 
-         await ApplyCommited();
+         ApplyCommited();
       }
       // Please update commitIndex before calling
-      protected async Task ApplyCommited()
+      protected void ApplyCommited()
       {
          // _logger.LogInformation("Try applying: lastApplied: {lastApplied}, commitIndex: {commitIndex}", lastApplied, commitIndex);
-         for (; lastApplied < commitIndex; lastApplied++)
+         lock (applyLock)
          {
-            await Task.Run(() => internalState.Apply(log[lastApplied + 1]));
-            _logger.LogInformation("Applied entry {entry}", log[lastApplied + 1]);
+            for (; lastApplied < commitIndex; lastApplied++)
+            {
+               internalState.Apply(log[lastApplied + 1]);
+               _logger.LogInformation("Applied entry {entry}", log[lastApplied + 1]);
+            }
          }
       }
 
@@ -309,6 +320,7 @@ namespace RafRaft.Domain
          AppendEntriesRequest<TDataIn> request;
          foreach (int nodeId in peersStatus.Keys)
          {
+            _logger.LogTrace("nextIndex[{nodeId}]: {nextIndex}. Total: {couny}", nodeId, nextIndex[nodeId], nextIndex.Keys.Count);
             int prevLogId = nextIndex[nodeId] - 1;
             int prevLogTerm = log[prevLogId].Term;
             List<RaftLogEntry<TDataIn>> entries = [];
@@ -323,6 +335,12 @@ namespace RafRaft.Domain
          }
 
          await Task.WhenAll(taskList);
+         _logger.LogTrace("Broadcast finishes");
+         if (broadcastCancel.IsCancellationRequested)
+         {
+            return;
+         }
+         RestartBroadcastTimer();
       }
 
       protected async Task AppendEntries(int receiverId, AppendEntriesRequest<TDataIn> request)
@@ -356,12 +374,17 @@ namespace RafRaft.Domain
          electionTimer.Change(GetRandomElectionTime(), Timeout.Infinite);
       }
 
+      protected void RestartBroadcastTimer()
+      {
+         broadcastTimer.Change(broadcastTimeout, Timeout.Infinite);
+      }
+
       protected async Task BeginElection()
       {
          currentTerm++;
          _logger.LogInformation("Begin election for Term {Term}", currentTerm);
 
-         broadcastTimer.Change(Timeout.Infinite, broadcastTimeout);
+         broadcastTimer.Change(Timeout.Infinite, Timeout.Infinite);
          nodeState = State.Candidate;
 
          VotedFor = id;
@@ -382,6 +405,8 @@ namespace RafRaft.Domain
          // leader was found during election
          if (nodeState != State.Candidate)
          {
+            _logger.LogInformation("Premature election stop");
+            RestartElectionTimer();
             return;
          }
          _logger.LogInformation("Received all VoteRequest replies from {num} nodes", ActiveNodesNumber);
@@ -443,13 +468,13 @@ namespace RafRaft.Domain
          VotedFor = null;
          leaderId = id;
          nodeState = State.Leader;
+         electionTimer.Change(Timeout.Infinite, Timeout.Infinite); // stop election timer
          foreach (int nodeId in peersStatus.Keys)
          {
             nextIndex[nodeId] = log.Count;
             matchIndex[nodeId] = 0;
          }
-         broadcastTimer.Change(0, broadcastTimeout); // start broadcast
-         electionTimer.Change(Timeout.Infinite, Timeout.Infinite); // stop election timer
+         broadcastTimer.Change(broadcastTimeout, Timeout.Infinite); // start broadcast
       }
 
       protected void BecomeFollower(int newLeaderId)
@@ -458,7 +483,7 @@ namespace RafRaft.Domain
          leaderId = newLeaderId;
          VotedFor = null;
          votesGot = 0;
-         broadcastTimer.Change(Timeout.Infinite, broadcastTimeout);
+         broadcastTimer.Change(Timeout.Infinite, Timeout.Infinite);
          RestartElectionTimer();
          nodeState = State.Follower;
       }

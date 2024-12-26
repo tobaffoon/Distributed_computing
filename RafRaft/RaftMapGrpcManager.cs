@@ -69,7 +69,6 @@ namespace RafRaft
             {
                _logger.LogCritical(e.Message);
             }
-            _logger.LogCritical(channel.State.ToString()); // save channels - check what is their status on each call/ Maybe change clients dictionary
 
             _clients[node.Id] = new RaftMapNode.RaftMapNodeClient(channel);
             _channels[node.Id] = channel;

@@ -44,9 +44,7 @@ namespace RafRaft
             }
          }
 
-         _logger.LogTrace("Start applying");
          await WaitApply();
-         _logger.LogTrace("Finish applying");
          return new SetReply()
          {
             Message = "Success"
@@ -57,9 +55,23 @@ namespace RafRaft
       {
          GetReply reply = new GetReply
          {
-            Key = getRequest.Key,
-            Value = internalState.RequestData(getRequest.Key)
+            Key = getRequest.Key
          };
+         try
+         {
+            reply.Value = internalState.RequestData(getRequest.Key);
+         }
+         catch (KeyNotFoundException)
+         {
+            reply.Value = new Data()
+            {
+               Value = new Google.Protobuf.WellKnownTypes.Value()
+               {
+                  StringValue = $"Key '{getRequest.Key}' was not found in storage"
+               }
+            };
+         }
+
          _logger.LogTrace("Reply: {reply}", reply);
          return reply;
       }

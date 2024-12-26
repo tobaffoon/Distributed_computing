@@ -8,6 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Remove="Protos/Object set example.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Protos/Object set example.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Protobuf Include="Protos\raftMapNode.proto" GrpcServices="Both" />
   </ItemGroup>
 

@@ -32,7 +32,7 @@ namespace RafRaft
             throw new RpcException(new Status(StatusCode.Unavailable, "Server has not started yet"));
          }
 
-         var reply = await _node.HandleAppendEntriesRequest(request.ConvertFromGrpc());
+         var reply = _node.HandleAppendEntriesRequest(request.ConvertFromGrpc());
          return reply.ConvertToGrpc();
       }
 
@@ -55,7 +55,7 @@ namespace RafRaft
 
       public override Task<SetReply> Set(SetRequest setRequest, ServerCallContext context)
       {
-         _logger.LogInformation("Received Set request: {request}", setRequest);
+         _logger.LogInformation("Received Set request: {request}, {data}", setRequest, setRequest.Value.DataCase);
          return _node.HandleUserSetRequest(setRequest);
       }
 

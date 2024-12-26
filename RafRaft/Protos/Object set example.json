@@ -1,0 +1,19 @@
+{
+   "key": "aliqua",
+   "value": {
+      "object": {
+         "object": {
+            "a": {
+               "value": {
+                  "string_value": "a"
+               }
+            },
+            "b": {
+               "value": {
+                  "string_value": "b"
+               }
+            }
+         }
+      }
+   }
+}
