@@ -14,6 +14,8 @@ namespace RafRaft
    {
       private readonly IReadOnlyDictionary<int, MapClient> _clients;
       public IReadOnlyDictionary<int, MapClient> Clients { get => _clients; }
+      private readonly Dictionary<int, string> _names;
+      public Dictionary<int, string> Names { get => _names; }
 
       private readonly int _id;
       private readonly ILogger _logger;
@@ -23,6 +25,11 @@ namespace RafRaft
       {
          _clients = new Dictionary<int, MapClient>(clients);
          _channels = new Dictionary<int, GrpcChannel>(channels);
+         _names = [];
+         foreach (var kvPair in _channels)
+         {
+            _names[kvPair.Key] = kvPair.Value.Target;
+         }
          _id = nodeConfig.Id;
          _logger = logger;
       }
@@ -33,6 +40,7 @@ namespace RafRaft
       {
          // _logger.LogInformation("Send Append Entries to #{id} with status {status}", receiverId, _channels[receiverId].State);
          AppendMapEntriesRequest grpcRequest = request.ConvertToGrpc();
+         // _logger.LogInformation("Send Append Entries: {request}, {PrevLogTerm}, {og_req}", grpcRequest, grpcRequest.PrevLogTerm, request);
          AppendMapEntriesReply grpcReply = await Clients[receiverId].AppendEntriesAsync(grpcRequest);
          AppendEntriesReply reply = grpcReply.ConvertFromGrpc();
          return reply;

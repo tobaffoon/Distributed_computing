@@ -6,7 +6,8 @@ namespace RafRaft
         where TDataIn : notnull
         where TGrpcClient : class
    {
-      IReadOnlyDictionary<int, TGrpcClient> Clients { get; }
+      public IReadOnlyDictionary<int, TGrpcClient> Clients { get; }
+      public Dictionary<int, string> Names { get; }
    }
 }
 

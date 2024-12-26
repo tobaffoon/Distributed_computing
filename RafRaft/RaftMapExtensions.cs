@@ -1,5 +1,6 @@
 namespace RafRaft
 {
+   using RafRaft.Domain;
    using RafRaft.Domain.Messages;
    using RafRaft.Protos;
 
@@ -70,12 +71,13 @@ namespace RafRaft
 
       public static AppendEntriesRequest<KeyValuePair<string, Data>> ConvertFromGrpc(this AppendMapEntriesRequest grpcRequest)
       {
+         List<LogEntry> entries = [];
          var request = new AppendEntriesRequest<KeyValuePair<string, Data>>(
             grpcRequest.Term,
             grpcRequest.LeaderId,
             grpcRequest.PrevLogId,
             grpcRequest.PrevLogTerm,
-            [],
+            entries,
             grpcRequest.LeaderCommitId
          );
          PopulateMessage(request, grpcRequest);
@@ -122,8 +124,8 @@ namespace RafRaft
          foreach (LogMapEntry grpcEntry in grpcRequest.Entries)
          {
             LogEntry entry = new LogEntry(
-               grpcEntry.Term,
                grpcEntry.Index,
+               grpcEntry.Term,
                new KeyValuePair<string, Data>(grpcEntry.Key, grpcEntry.Value));
 
             request.Entries.Add(entry);

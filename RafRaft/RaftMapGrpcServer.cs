@@ -9,14 +9,14 @@ namespace RafRaft
 
    public class RaftMapGrpcServer : RaftMapNode.RaftMapNodeBase
    {
-      private readonly RaftNode _node;
+      private readonly RaftMapGrpcNode _node;
       private readonly ILogger _logger;
       private bool _started = false;
 
       public RaftMapGrpcServer(RaftMapGrpcMediator mediator, RaftNodeConfig config, ILogger logger, bool isInitNode)
       {
          _logger = logger;
-         _node = new RaftNode(config, mediator, _logger, isInitNode);
+         _node = new RaftMapGrpcNode(config, mediator, _logger, isInitNode);
       }
 
       public void Start(IDictionary<int, bool> peersStatus)
@@ -51,6 +51,18 @@ namespace RafRaft
       {
          _logger.LogInformation("Received testConnection request from {peer}", context.Peer);
          return Task.FromResult(e);
+      }
+
+      public override Task<SetReply> Set(SetRequest setRequest, ServerCallContext context)
+      {
+         _logger.LogInformation("Received Set request: {request}", setRequest);
+         return _node.HandleUserSetRequest(setRequest);
+      }
+
+      public override Task<GetReply> Get(GetRequest getRequest, ServerCallContext context)
+      {
+         _logger.LogInformation("Received Get request: {request}", getRequest);
+         return Task.FromResult(_node.HandleUserGetRequest(getRequest));
       }
    }
 }
