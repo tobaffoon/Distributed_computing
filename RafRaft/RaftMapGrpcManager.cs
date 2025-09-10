@@ -49,7 +49,7 @@ namespace RafRaft
                {
                   c.TimestampFormat = "[HH:mm:ss:fffff] ";
                })
-            .SetMinimumLevel(LogLevel.Trace));
+            .SetMinimumLevel(LogLevel.Information));
          _logger = factory.CreateLogger($"RaftNode #{nodeConfig.Id}");
 
          Dictionary<int, GrpcChannel> _channels = [];
@@ -69,6 +69,7 @@ namespace RafRaft
             {
                _logger.LogCritical(e.Message);
             }
+
 
             _clients[node.Id] = new RaftMapNode.RaftMapNodeClient(channel);
             _channels[node.Id] = channel;
